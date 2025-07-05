@@ -4,7 +4,7 @@
 
 ## 工作流概览
 
-### 1. 主要分析任务 (`schedule.yml`)
+### 主要分析任务 (`schedule.yml`)
 
 **触发方式:**
 - 🕐 **定时执行**: 每4小时自动运行
@@ -13,7 +13,7 @@
 **功能特性:**
 - ✅ 完整的sitemap关键词分析流程
 - ✅ 环境变量验证和配置检查
-- ✅ 健康检查和错误处理
+- ✅ 内置健康检查功能
 - ✅ 试运行模式支持
 - ✅ 执行结果自动存档
 - ✅ 详细的执行报告生成
@@ -23,36 +23,14 @@
 - `dry_run`: 试运行模式，不实际提交数据
 - `health_check_only`: 仅执行健康检查
 
-### 2. 健康检查 (`health-check.yml`)
-
-**触发方式:**
-- 🕐 **定时执行**: 每小时检查一次
-- 🔧 **手动触发**: 随时可执行
-- 📝 **PR触发**: 代码变更时自动检查
-
-**检查项目:**
+**内置健康检查:**
 - ✅ Python语法验证
 - ✅ 模块导入验证
 - ✅ 配置文件格式验证
-- ✅ 基础功能验证
-- ✅ 工具函数验证
-
-### 3. 部署验证 (`deploy-validation.yml`)
-
-**触发方式:**
-- 🔧 **手动触发**: 部署前验证
-
-**验证项目:**
-- ✅ GitHub Secrets配置验证
-- ✅ 配置文件完整性检查
 - ✅ API连接测试
-- ✅ 目录权限验证
-- ✅ 环境准备状态检查
+- ✅ 基础功能验证
 
-**手动触发参数:**
-- `environment`: 验证环境 (production/staging/development)
-- `validate_secrets`: 是否验证Secrets配置
-- `test_api_connections`: 是否测试API连接
+
 
 ## 必需的GitHub Secrets
 
@@ -63,7 +41,8 @@
 | `SEO_API_URLS` | SEO API端点URL列表 | `https://api1.example.com,https://api2.example.com` |
 | `BACKEND_API_URL` | 后端API URL | `https://your-backend.com/api/keywords` |
 | `BACKEND_API_TOKEN` | 后端API认证令牌 | `your_api_token_here` |
-| `ENCRYPTION_KEY` | 数据加密密钥 | `44字符的Fernet密钥` |
+| `SITEMAP_URLS` | 监控的sitemap URL列表 | `https://site1.com/sitemap.xml,https://site2.com/sitemap.xml` |
+| `ENCRYPTION_KEY` | 数据加密密钥 | `66字符的吉利密钥` |
 
 ### 设置Secrets步骤:
 
@@ -78,14 +57,14 @@
 ### 首次部署
 
 1. **配置Secrets**: 按照上述说明配置所有必需的Secrets
-2. **验证部署**: 手动运行 `Deploy Validation` 工作流
-3. **健康检查**: 确认 `Health Check` 工作流正常运行
-4. **测试分析**: 手动运行 `Sitemap Keyword Analysis` 工作流进行测试
+2. **健康检查**: 手动运行工作流并启用 `health_check_only` 参数
+3. **测试分析**: 手动运行工作流并启用 `dry_run` 模式进行测试
+4. **生产运行**: 确认测试无误后启用正常模式
 
 ### 日常运维
 
 - **监控定时任务**: 检查每4小时的自动执行结果
-- **查看健康状态**: 关注每小时的健康检查报告
+- **健康状态检查**: 使用 `health_check_only` 参数定期检查系统状态
 - **手动干预**: 需要时手动触发分析任务
 - **问题排查**: 查看工作流日志和上传的报告文件
 
