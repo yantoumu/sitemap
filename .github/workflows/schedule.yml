@@ -73,12 +73,17 @@ jobs:
         echo "配置文件验证通过"
         
     - name: 设置环境变量
+      env:
+        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
+        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
+        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
+        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
       run: |
-        echo "SEO_API_URLS=${{ secrets.SEO_API_URLS }}" >> $GITHUB_ENV
-        echo "BACKEND_API_URL=${{ secrets.BACKEND_API_URL }}" >> $GITHUB_ENV
-        echo "BACKEND_API_TOKEN=${{ secrets.BACKEND_API_TOKEN }}" >> $GITHUB_ENV
-        echo "ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" >> $GITHUB_ENV
-        echo "LOG_LEVEL=${{ github.event.inputs.log_level || 'INFO' }}" >> $GITHUB_ENV
+        # 安全地设置环境变量，不在日志中显示敏感信息
+        echo "LOG_LEVEL=$LOG_LEVEL" >> $GITHUB_ENV
+        echo "✅ 环境变量已安全设置（敏感信息已隐藏）"
         
     - name: 验证环境变量
       run: |
@@ -93,45 +98,58 @@ jobs:
         echo "环境变量验证通过"
         
     - name: 执行健康检查
+      env:
+        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
+        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
+        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
+        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "执行系统健康检查..."
         python main.py --health-check --log-level ${{ env.LOG_LEVEL }}
-        
+
     - name: 执行sitemap分析
       if: ${{ github.event.inputs.health_check_only != 'true' }}
+      env:
+        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
+        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
+        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
+        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "开始执行sitemap关键词分析..."
-        
-        # 构建命令参数
-        CMD_ARGS="--config config/config.yaml --rules config/url_rules.yaml --sitemaps config/sitemaps.txt --log-level ${{ env.LOG_LEVEL }}"
-        
+
+        # 构建命令参数（不显示敏感信息）
+        CMD_ARGS="--log-level ${{ env.LOG_LEVEL }}"
+
         # 添加试运行参数
         if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
           CMD_ARGS="$CMD_ARGS --dry-run"
-          echo "试运行模式已启用"
+          echo "✅ 试运行模式已启用"
         fi
-        
-        # 执行分析
+
+        echo "✅ 开始执行分析（使用环境变量配置）"
+        # 执行分析（环境变量会自动传递给应用程序）
         python main.py $CMD_ARGS
         
     - name: 检查执行结果
       if: ${{ github.event.inputs.health_check_only != 'true' }}
       run: |
         echo "检查执行结果..."
-        
-        # 检查日志文件
+
+        # 检查日志文件（仅显示统计信息，不显示内容）
         if [ -f "logs/sitemap_analyzer.log" ]; then
           echo "日志文件大小: $(du -h logs/sitemap_analyzer.log | cut -f1)"
-          echo "最后10行日志:"
-          tail -10 logs/sitemap_analyzer.log
+          echo "日志行数: $(wc -l < logs/sitemap_analyzer.log)"
+          echo "⚠️ 日志内容包含敏感信息，不在此显示"
         else
           echo "警告: 日志文件不存在"
         fi
-        
-        # 检查数据文件
+
+        # 检查数据文件（仅显示统计信息，不显示内容）
         if [ -f "data/processed_urls.json" ]; then
           echo "数据文件大小: $(du -h data/processed_urls.json | cut -f1)"
-          echo "数据文件记录数: $(python -c "import json; data=json.load(open('data/processed_urls.json')); print(len(data.get('processed_urls', {})))")"
+          echo "⚠️ 数据文件包含加密URL，不显示具体内容"
         else
           echo "信息: 数据文件不存在（可能是首次运行或无新数据）"
         fi
@@ -173,23 +191,10 @@ jobs:
         
         echo "执行报告已生成: $REPORT_FILE"
         
-    - name: 上传日志文件
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: logs-${{ github.run_number }}
-        path: logs/
-        retention-days: 30
-        if-no-files-found: ignore
-        
-    - name: 上传数据文件
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: data-${{ github.run_number }}
-        path: data/
-        retention-days: 7
-        if-no-files-found: ignore
+    # 注意: 不上传日志和数据文件，因为它们包含敏感信息
+    # 日志文件包含API URL和调试信息
+    # 数据文件包含加密的URL数据
+    # 如需调试，请使用本地环境或安全的私有存储
         
     - name: 上传执行报告
       if: always()
@@ -200,13 +205,9 @@ jobs:
         retention-days: 30
         if-no-files-found: ignore
         
-    - name: 错误日志上传
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: error-logs-${{ github.run_number }}
-        path: logs/
-        retention-days: 7
+    # 注意: 不上传错误日志，因为可能包含敏感的API信息
+    # 如需调试失败原因，请检查GitHub Actions的工作流日志
+    # 或在本地环境中重现问题进行调试
         
     - name: 通知执行结果
       if: always()
