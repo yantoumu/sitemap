@@ -175,7 +175,7 @@ jobs:
         
     - name: 上传日志文件
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: logs-${{ github.run_number }}
         path: logs/
@@ -184,7 +184,7 @@ jobs:
         
     - name: 上传数据文件
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: data-${{ github.run_number }}
         path: data/
@@ -193,7 +193,7 @@ jobs:
         
     - name: 上传执行报告
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: reports-${{ github.run_number }}
         path: execution-report-*.md
@@ -202,7 +202,7 @@ jobs:
         
     - name: 错误日志上传
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: error-logs-${{ github.run_number }}
         path: logs/
