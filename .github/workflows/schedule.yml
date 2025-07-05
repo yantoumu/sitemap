@@ -36,6 +36,13 @@ jobs:
   sitemap-analysis:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
+      BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+      BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
+      SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
     
     steps:
     - name: Checkout代码
@@ -57,12 +64,6 @@ jobs:
         mkdir -p data logs
         
     - name: 验证配置文件和环境变量
-      env:
-        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
-        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
-        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "🔍 验证必需的配置文件..."
 
@@ -109,45 +110,22 @@ jobs:
 
         echo "🎉 配置文件和环境变量验证通过"
         
-    - name: 设置环境变量
-      env:
-        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
-        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
-        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-        LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
-      run: |
-        # 安全地设置环境变量，不在日志中显示敏感信息
-        echo "LOG_LEVEL=$LOG_LEVEL" >> $GITHUB_ENV
-        echo "✅ 环境变量已安全设置（敏感信息已隐藏）"
+    # 环境变量已在job级别设置，无需重复设置
         
     # 环境变量验证已在"验证配置文件和环境变量"步骤中完成
         
     - name: 执行健康检查
-      env:
-        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
-        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
-        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "执行系统健康检查..."
-        python main.py --health-check --log-level ${{ env.LOG_LEVEL }}
+        python main.py --health-check --log-level $LOG_LEVEL
 
     - name: 执行sitemap分析
       if: ${{ github.event.inputs.health_check_only != 'true' }}
-      env:
-        SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
-        BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-        BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
-        SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "开始执行sitemap关键词分析..."
 
         # 构建命令参数（不显示敏感信息）
-        CMD_ARGS="--log-level ${{ env.LOG_LEVEL }}"
+        CMD_ARGS="--log-level $LOG_LEVEL"
 
         # 添加试运行参数
         if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
@@ -196,7 +174,7 @@ jobs:
         - **触发方式**: ${{ github.event_name }}
         - **运行ID**: ${{ github.run_id }}
         - **提交SHA**: ${{ github.sha }}
-        - **日志级别**: ${{ env.LOG_LEVEL }}
+        - **日志级别**: $LOG_LEVEL
         - **试运行模式**: ${{ github.event.inputs.dry_run || 'false' }}
         - **仅健康检查**: ${{ github.event.inputs.health_check_only || 'false' }}
         
