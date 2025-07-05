@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 import gzip
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
 from datetime import datetime
@@ -164,7 +164,7 @@ class KeywordMetricsClient:
                 self.logger.error(error_msg)
                 raise Exception(error_msg)
     
-    def _prepare_request(self, batch: List[Dict[str, Any]]) -> tuple[Dict[str, str], bytes]:
+    def _prepare_request(self, batch: List[Dict[str, Any]]) -> Tuple[Dict[str, str], bytes]:
         """
         准备请求数据和头部
         
@@ -172,7 +172,7 @@ class KeywordMetricsClient:
             batch: 数据批次
             
         Returns:
-            tuple[Dict[str, str], bytes]: (请求头, 请求数据)
+            Tuple[Dict[str, str], bytes]: (请求头, 请求数据)
         """
         # 准备请求头
         headers = {
