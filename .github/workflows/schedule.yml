@@ -1,0 +1,224 @@
+name: Sitemap Keyword Analysis
+
+on:
+  # 每4小时自动执行
+  schedule:
+    - cron: '0 */4 * * *'
+  
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: '日志级别'
+        required: false
+        default: 'INFO'
+        type: choice
+        options:
+          - DEBUG
+          - INFO
+          - WARNING
+          - ERROR
+      dry_run:
+        description: '试运行模式（不提交数据）'
+        required: false
+        default: false
+        type: boolean
+      health_check_only:
+        description: '仅执行健康检查'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.8'
+  
+jobs:
+  sitemap-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 创建必要目录
+      run: |
+        mkdir -p data logs
+        
+    - name: 验证配置文件
+      run: |
+        if [ ! -f "config/config.yaml" ]; then
+          echo "错误: config/config.yaml 不存在"
+          exit 1
+        fi
+        if [ ! -f "config/url_rules.yaml" ]; then
+          echo "错误: config/url_rules.yaml 不存在"
+          exit 1
+        fi
+        if [ ! -f "config/sitemaps.txt" ]; then
+          echo "错误: config/sitemaps.txt 不存在"
+          exit 1
+        fi
+        echo "配置文件验证通过"
+        
+    - name: 设置环境变量
+      run: |
+        echo "SEO_API_URLS=${{ secrets.SEO_API_URLS }}" >> $GITHUB_ENV
+        echo "BACKEND_API_URL=${{ secrets.BACKEND_API_URL }}" >> $GITHUB_ENV
+        echo "BACKEND_API_TOKEN=${{ secrets.BACKEND_API_TOKEN }}" >> $GITHUB_ENV
+        echo "ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" >> $GITHUB_ENV
+        echo "LOG_LEVEL=${{ github.event.inputs.log_level || 'INFO' }}" >> $GITHUB_ENV
+        
+    - name: 验证环境变量
+      run: |
+        if [ -z "$BACKEND_API_URL" ]; then
+          echo "错误: BACKEND_API_URL 环境变量未设置"
+          exit 1
+        fi
+        if [ -z "$ENCRYPTION_KEY" ]; then
+          echo "错误: ENCRYPTION_KEY 环境变量未设置"
+          exit 1
+        fi
+        echo "环境变量验证通过"
+        
+    - name: 执行健康检查
+      run: |
+        echo "执行系统健康检查..."
+        python main.py --health-check --log-level ${{ env.LOG_LEVEL }}
+        
+    - name: 执行sitemap分析
+      if: ${{ github.event.inputs.health_check_only != 'true' }}
+      run: |
+        echo "开始执行sitemap关键词分析..."
+        
+        # 构建命令参数
+        CMD_ARGS="--config config/config.yaml --rules config/url_rules.yaml --sitemaps config/sitemaps.txt --log-level ${{ env.LOG_LEVEL }}"
+        
+        # 添加试运行参数
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          CMD_ARGS="$CMD_ARGS --dry-run"
+          echo "试运行模式已启用"
+        fi
+        
+        # 执行分析
+        python main.py $CMD_ARGS
+        
+    - name: 检查执行结果
+      if: ${{ github.event.inputs.health_check_only != 'true' }}
+      run: |
+        echo "检查执行结果..."
+        
+        # 检查日志文件
+        if [ -f "logs/sitemap_analyzer.log" ]; then
+          echo "日志文件大小: $(du -h logs/sitemap_analyzer.log | cut -f1)"
+          echo "最后10行日志:"
+          tail -10 logs/sitemap_analyzer.log
+        else
+          echo "警告: 日志文件不存在"
+        fi
+        
+        # 检查数据文件
+        if [ -f "data/processed_urls.json" ]; then
+          echo "数据文件大小: $(du -h data/processed_urls.json | cut -f1)"
+          echo "数据文件记录数: $(python -c "import json; data=json.load(open('data/processed_urls.json')); print(len(data.get('processed_urls', {})))")"
+        else
+          echo "信息: 数据文件不存在（可能是首次运行或无新数据）"
+        fi
+        
+    - name: 生成执行报告
+      if: always()
+      run: |
+        echo "生成执行报告..."
+        
+        REPORT_FILE="execution-report-$(date +%Y%m%d-%H%M%S).md"
+        
+        cat > $REPORT_FILE << EOF
+        # Sitemap关键词分析执行报告
+        
+        ## 执行信息
+        - **执行时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        - **触发方式**: ${{ github.event_name }}
+        - **运行ID**: ${{ github.run_id }}
+        - **提交SHA**: ${{ github.sha }}
+        - **日志级别**: ${{ env.LOG_LEVEL }}
+        - **试运行模式**: ${{ github.event.inputs.dry_run || 'false' }}
+        - **仅健康检查**: ${{ github.event.inputs.health_check_only || 'false' }}
+        
+        ## 文件状态
+        EOF
+        
+        # 添加文件信息
+        if [ -f "logs/sitemap_analyzer.log" ]; then
+          echo "- **日志文件**: 存在 ($(du -h logs/sitemap_analyzer.log | cut -f1))" >> $REPORT_FILE
+        else
+          echo "- **日志文件**: 不存在" >> $REPORT_FILE
+        fi
+        
+        if [ -f "data/processed_urls.json" ]; then
+          echo "- **数据文件**: 存在 ($(du -h data/processed_urls.json | cut -f1))" >> $REPORT_FILE
+        else
+          echo "- **数据文件**: 不存在" >> $REPORT_FILE
+        fi
+        
+        echo "执行报告已生成: $REPORT_FILE"
+        
+    - name: 上传日志文件
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs-${{ github.run_number }}
+        path: logs/
+        retention-days: 30
+        if-no-files-found: ignore
+        
+    - name: 上传数据文件
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: data-${{ github.run_number }}
+        path: data/
+        retention-days: 7
+        if-no-files-found: ignore
+        
+    - name: 上传执行报告
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: reports-${{ github.run_number }}
+        path: execution-report-*.md
+        retention-days: 30
+        if-no-files-found: ignore
+        
+    - name: 错误日志上传
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: error-logs-${{ github.run_number }}
+        path: logs/
+        retention-days: 7
+        
+    - name: 通知执行结果
+      if: always()
+      run: |
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ Sitemap关键词分析执行成功"
+        else
+          echo "❌ Sitemap关键词分析执行失败"
+          echo "请检查日志文件获取详细错误信息"
+        fi
+        
+        echo "执行摘要:"
+        echo "- 运行ID: ${{ github.run_id }}"
+        echo "- 执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "- 状态: ${{ job.status }}"

@@ -1,0 +1,86 @@
+# URL关键词提取规则配置
+
+rules:
+  # 示例规则 - 电商网站
+  - domain: "example.com"
+    description: "电商网站产品页面规则"
+    patterns:
+      - "^/products/.*"
+      - "^/category/.*"
+      - "^/item/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: 2  # 提取第二个路径段
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9\\u4e00-\\u9fa5]"  # 保留中英文和数字
+      - type: "query_param"
+        param_name: "keyword"
+      - type: "query_param"
+        param_name: "q"
+    exclude_patterns:
+      - ".*/page/[0-9]+$"  # 排除分页
+      - ".*/amp$"          # 排除AMP页面
+      - ".*/print$"        # 排除打印页面
+    stop_words:
+      - "product"
+      - "category"
+      - "page"
+      - "item"
+      - "the"
+      - "and"
+      - "or"
+
+  # 示例规则 - 博客网站
+  - domain: "blog.example.com"
+    description: "博客网站文章页面规则"
+    patterns:
+      - "^/[0-9]{4}/[0-9]{2}/.*"  # 年/月/文章标题格式
+      - "^/post/.*"
+      - "^/article/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（通常是文章标题）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9\\u4e00-\\u9fa5]"
+      - type: "custom_regex"
+        regex: "/tag/([^/]+)"  # 提取标签
+      - type: "custom_regex"
+        regex: "/category/([^/]+)"  # 提取分类
+    exclude_patterns:
+      - ".*/feed$"
+      - ".*/rss$"
+      - ".*/sitemap.*"
+    stop_words:
+      - "post"
+      - "article"
+      - "blog"
+      - "tag"
+      - "category"
+      - "the"
+      - "and"
+      - "or"
+      - "in"
+      - "on"
+      - "at"
+      - "to"
+      - "for"
+
+  # 示例规则 - 新闻网站
+  - domain: "news.example.com"
+    description: "新闻网站文章规则"
+    patterns:
+      - "^/news/.*"
+      - "^/article/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9\\u4e00-\\u9fa5]"
+    exclude_patterns:
+      - ".*/archive/.*"
+      - ".*/author/.*"
+    stop_words:
+      - "news"
+      - "article"
+      - "report"
+      - "story"

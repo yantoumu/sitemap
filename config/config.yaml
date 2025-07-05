@@ -1,0 +1,41 @@
+# 网站地图关键词分析工具 - 系统配置
+
+# SEO API配置
+seo_api:
+  urls: "${SEO_API_URLS}"  # 从环境变量读取，多个URL用逗号分隔，系统自动轮询
+  interval: 2.0  # 请求间隔（秒）
+  batch_size: 5  # 每批查询关键词数量
+  timeout: 60    # 请求超时时间
+
+# 后端API配置
+backend_api:
+  url: "${BACKEND_API_URL}"
+  auth_token: "${BACKEND_API_TOKEN}"
+  batch_size: 500  # 批量提交大小
+  timeout: 40
+
+# 注意：关键词指标API现在统一使用backend_api配置
+
+# 系统配置
+system:
+  max_concurrent: 20     # 最大并发数
+  retry_times: 3         # 重试次数
+  retry_delay: 1.0       # 重试延迟（秒）
+
+# 存储配置
+storage:
+  encryption_key: "${ENCRYPTION_KEY}"
+  storage_file: "data/processed_urls.json"
+  data_retention_days: 365  # 数据保留天数，365天
+
+# 缓存配置
+cache:
+  ttl: 604800  # 缓存TTL（7天，秒）
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/sitemap_analyzer.log"
+  max_size: "10MB"
+  backup_count: 5

@@ -1,0 +1,423 @@
+# 游戏网站URL关键词提取规则配置
+
+rules:
+  # startgamer.ru - 俄语游戏网站（特殊URL格式处理）
+  - domain: "startgamer.ru"
+    description: "startgamer.ru俄语游戏网站规则"
+    patterns:
+      - "^/.*"  # 匹配所有页面
+    extract_rules:
+      # 规则1：处理单段路径（如 /brejnrot, /razblokiruj-pazl）
+      - type: "path_segment"
+        position: -1  # 最后一个路径段
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9а-яё ]"  # 支持俄语字符和空格
+      # 规则2：处理双段路径（如 /game/28848），提取第一段作为类别
+      - type: "path_segment"
+        position: 0  # 第一个路径段
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9а-яё ]"  # 支持俄语字符和空格
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/feed.*"
+      - ".*/page/[0-9]+.*"  # 排除分页
+      - ".*/category/.*"    # 排除分类页面
+      - ".*/tag/.*"         # 排除标签页面
+      - ".*/search.*"       # 排除搜索页面
+    stop_words:
+      # 最小化停用词，保留可能有意义的游戏相关词汇
+      - "www"
+      - "com"
+      - "ru"
+      - "index"
+      - "main"
+      - "home"
+      - "page"
+      - "search"
+      # 注意：不包含 "game" - 在俄语游戏网站中可能有意义
+
+  # itch.io - 独立游戏平台（需要特殊处理sitemap索引）
+  - domain: "itch.io"
+    description: "itch.io独立游戏平台规则"
+    patterns:
+      - "^/.*"  # 匹配所有页面
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（通常是游戏名称）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/feed.*"
+      - ".*/jam.*"  # 排除游戏jam相关页面
+      - ".*/profile.*"
+      - ".*/login.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "indie"
+      - "itch"
+      - "io"
+      - "www"
+    special_sitemap_handler:
+      handler_type: "itch_io_games"
+      include_patterns:
+        - ".*/games.*\\.xml$"  # 只包含games相关的sitemap
+      exclude_patterns:
+        - ".*/jam.*"  # 排除jam相关的sitemap
+        - ".*/blog.*"
+        - ".*/user.*"
+      max_concurrent: 10
+
+  # lagged.com - 游戏网站（TXT格式sitemap）
+  - domain: "lagged.com"
+    description: "lagged.com游戏网站规则（TXT格式sitemap）"
+    patterns:
+      - "^/en/g/.*"  # 游戏页面路径
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/new-games.*"
+      - ".*/popular-games.*"
+      - ".*/all-games.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "lagged"
+      - "com"
+      - "www"
+
+  # kiz10.com - 儿童游戏网站（HTTPS命名空间）
+  - domain: "kiz10.com"
+    description: "kiz10.com儿童游戏网站规则（HTTPS命名空间）"
+    patterns:
+      - "^/.*/$"  # 游戏页面路径（以/结尾）
+    extract_rules:
+      - type: "path_segment"
+        position: -2  # 倒数第二个路径段（去掉末尾的/）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "kids"
+      - "children"
+      - "kiz10"
+      - "com"
+      - "www"
+
+  # wordle2.io - Wordle类游戏网站（需要过滤tag页面）
+  - domain: "wordle2.io"
+    description: "wordle2.io Wordle类游戏网站规则（过滤tag页面）"
+    patterns:
+      - "^/[^/]+$"  # 只匹配根目录下的单级路径（游戏页面）
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（游戏名称）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/tag/.*"      # 排除所有tag页面
+      - ".*/category/.*" # 排除分类页面
+      - ".*/sitemap.*"   # 排除sitemap
+      - ".*/robots.*"    # 排除robots
+      - ".*/search.*"    # 排除搜索页面
+      - ".*/about.*"     # 排除关于页面
+      - ".*/contact.*"   # 排除联系页面
+      - ".*/privacy.*"   # 排除隐私页面
+      - ".*/terms.*"     # 排除条款页面
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "wordle"
+      - "word"
+      - "puzzle"
+      - "io"
+      - "www"
+
+  # play-games.com - 游戏网站（特殊sitemap索引处理）
+  - domain: "play-games.com"
+    description: "play-games.com游戏网站规则（特殊sitemap索引处理）"
+    patterns:
+      - "^/game/.*"  # 游戏页面路径
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（游戏名称）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"   # 排除sitemap
+      - ".*/robots.*"    # 排除robots
+      - ".*/category/.*" # 排除分类页面
+      - ".*/tag/.*"      # 排除标签页面
+      - ".*/search.*"    # 排除搜索页面
+      - ".*/about.*"     # 排除关于页面
+      - ".*/contact.*"   # 排除联系页面
+      - ".*/privacy.*"   # 排除隐私页面
+      - ".*/terms.*"     # 排除条款页面
+      - ".*/[a-z]{2}/.*" # 排除语言代码路径（如/ro/, /de/, /fr/等）
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "www"
+      - "com"
+    special_sitemap_handler:
+      handler_type: "play_games_index"
+      include_patterns:
+        - "^https://www\\.play-games\\.com/sitemap/gamessitemap-\\d+\\.xml$"  # 只包含英文版游戏sitemap
+      exclude_patterns:
+        - ".*/[a-z]{2}/sitemap/.*"  # 排除包含语言代码的sitemap路径
+      max_concurrent: 8
+
+  # playgame24.com - 游戏网站（特殊sitemap索引处理）
+  - domain: "playgame24.com"
+    description: "playgame24.com游戏网站规则（特殊sitemap索引处理）"
+    patterns:
+      - "^/.*"  # 匹配所有游戏页面
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（游戏名称）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"   # 排除sitemap
+      - ".*/robots.*"    # 排除robots
+      - ".*/category/.*" # 排除分类页面
+      - ".*/tag/.*"      # 排除标签页面
+      - ".*/search.*"    # 排除搜索页面
+      - ".*/about.*"     # 排除关于页面
+      - ".*/contact.*"   # 排除联系页面
+      - ".*/privacy.*"   # 排除隐私页面
+      - ".*/terms.*"     # 排除条款页面
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "www"
+      - "com"
+      - "playgame24"
+    special_sitemap_handler:
+      handler_type: "playgame24_index"
+      include_patterns:
+        - "^https://playgame24\\.com/sitemaps/sitemap_0_ru\\.xml$"
+        - "^https://playgame24\\.com/sitemaps/sitemap_online_0_ru\\.xml$"
+      exclude_patterns: []  # 不需要排除模式，因为我们只要特定的两个
+      max_concurrent: 5
+
+  # 1games.io - 游戏网站
+  - domain: "1games.io"
+    description: "1games.io游戏页面规则"
+    patterns:
+      - "^/.*"  # 匹配所有页面
+    extract_rules:
+      - type: "path_segment"
+        position: -1  # 最后一个路径段（通常是游戏名称）
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/feed.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "html5"
+      - "io"
+      - "www"
+
+  # azgames.io - 游戏网站
+  - domain: "azgames.io"
+    description: "azgames.io游戏页面规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "az"
+      - "www"
+
+  # baldigames.com - 游戏网站
+  - domain: "baldigames.com"
+    description: "baldigames.com游戏页面规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+      - ".*/page.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "baldi"
+      - "www"
+
+  # game-game.com - 游戏网站
+  - domain: "game-game.com"
+    description: "game-game.com游戏页面规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "play"
+      - "online"
+      - "free"
+      - "www"
+
+  # geometry-free.com - 几何游戏网站
+  - domain: "geometry-free.com"
+    description: "geometry-free.com几何游戏规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "geometry"
+      - "free"
+      - "play"
+      - "online"
+      - "www"
+
+  # geometrydash.io - 几何冲刺游戏
+  - domain: "geometrydash.io"
+    description: "geometrydash.io几何冲刺游戏规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "geometry"
+      - "dash"
+      - "play"
+      - "online"
+      - "io"
+      - "www"
+
+  # googledoodlegames.net - Google涂鸦游戏
+  - domain: "googledoodlegames.net"
+    description: "googledoodlegames.net谷歌涂鸦游戏规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "google"
+      - "doodle"
+      - "play"
+      - "online"
+      - "www"
+
+  # html5.gamedistribution.com - HTML5游戏分发
+  - domain: "html5.gamedistribution.com"
+    description: "html5.gamedistribution.com HTML5游戏规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "html5"
+      - "play"
+      - "online"
+      - "distribution"
+      - "www"
