@@ -130,14 +130,39 @@ class ConfigLoader:
                 self.logger.warning(f"环境变量未设置: {env_var}")
                 return data  # 保持原值
 
-            # 特殊处理：如果是URL列表字符串，转换为列表
-            if ',' in env_value and ('http' in env_value or 'api' in env_value.lower()):
-                return [url.strip() for url in env_value.split(',') if url.strip()]
+            # 清理环境变量值中的换行符和回车符（修复aiohttp安全检查问题）
+            cleaned_value = self._sanitize_env_value(env_value)
 
-            return env_value
+            # 特殊处理：如果是URL列表字符串，转换为列表
+            if ',' in cleaned_value and ('http' in cleaned_value or 'api' in cleaned_value.lower()):
+                return [url.strip() for url in cleaned_value.split(',') if url.strip()]
+
+            return cleaned_value
         else:
             return data
-    
+
+    def _sanitize_env_value(self, value: str) -> str:
+        """
+        清理环境变量值中的换行符和回车符
+
+        Args:
+            value: 原始环境变量值
+
+        Returns:
+            str: 清理后的值
+        """
+        if not value:
+            return ""
+
+        # 移除换行符、回车符和其他控制字符
+        cleaned = value.strip().replace('\n', '').replace('\r', '').replace('\t', '')
+
+        # 记录清理操作（仅在调试模式下）
+        if cleaned != value.strip():
+            self.logger.debug("环境变量值包含控制字符，已自动清理")
+
+        return cleaned
+
     def validate_config_files(self) -> bool:
         """
         验证配置文件是否存在且格式正确
