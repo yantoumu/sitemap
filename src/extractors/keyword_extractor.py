@@ -20,7 +20,40 @@ class KeywordExtractor:
         """初始化关键词提取器"""
         self.logger = logging.getLogger(__name__)
         self.processor = KeywordProcessor()
-    
+
+        # 正则表达式缓存 - 性能优化
+        self._regex_cache = {}
+        self._compiled_patterns = {
+            # 预编译常用正则模式
+            'clean_default': re.compile(r'[^a-zA-Z0-9\u4e00-\u9fa5\u0400-\u04ff\s]'),
+            'split_chars': re.compile(r'[-_\s]+'),
+            'number_only': re.compile(r'^\d+$'),
+            'single_char': re.compile(r'^.$'),
+            'file_extension': re.compile(r'\.(html?|php|asp|jsp|xml)$', re.IGNORECASE),
+            'common_words': re.compile(r'^(page|index|home|main|default|admin|www|com|net|org)$', re.IGNORECASE)
+        }
+
+    def _get_compiled_regex(self, pattern: str, flags: int = 0) -> re.Pattern:
+        """
+        获取编译后的正则表达式（带缓存）
+
+        Args:
+            pattern: 正则表达式模式
+            flags: 正则标志
+
+        Returns:
+            re.Pattern: 编译后的正则表达式
+        """
+        cache_key = (pattern, flags)
+        if cache_key not in self._regex_cache:
+            try:
+                self._regex_cache[cache_key] = re.compile(pattern, flags)
+            except re.error as e:
+                self.logger.error(f"正则表达式编译失败 {pattern}: {e}")
+                # 返回一个永不匹配的模式
+                self._regex_cache[cache_key] = re.compile(r'(?!.*)')
+        return self._regex_cache[cache_key]
+
     def extract_keywords(self, url: str, rule: URLExtractionRule) -> Set[str]:
         """
         根据规则从URL提取关键词
@@ -172,7 +205,7 @@ class KeywordExtractor:
             if not rule.regex:
                 return keywords
             
-            pattern = re.compile(rule.regex)
+            pattern = self._get_compiled_regex(rule.regex)
             matches = pattern.findall(url)
             
             for match in matches:
@@ -252,11 +285,11 @@ class KeywordExtractor:
                 continue
 
             # 跳过纯数字（但保留包含字母的数字组合）
-            if segment.isdigit():
+            if self._compiled_patterns['number_only'].match(segment):
                 continue
 
             # 跳过单字符（除非是中文）
-            if len(segment) == 1 and not re.search(r'[\u4e00-\u9fa5]', segment):
+            if self._compiled_patterns['single_char'].match(segment) and not re.search(r'[\u4e00-\u9fa5]', segment):
                 continue
 
             # 检查是否包含字母或中文字符

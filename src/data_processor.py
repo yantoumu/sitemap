@@ -563,33 +563,183 @@ class URLProcessor:
     
     def extract_all_keywords(self, urls: List[str]) -> Dict[str, Set[str]]:
         """
-        从所有URL提取关键词
-        
+        从所有URL提取关键词 - 并行优化版本
+
         Args:
             urls: URL列表
-            
+
+        Returns:
+            Dict[str, Set[str]]: URL到关键词集合的映射
+        """
+        import asyncio
+        import concurrent.futures
+        import os
+        from .utils import ProgressLogger
+
+        # 如果URL数量较少，使用原始顺序处理
+        if len(urls) < 1000:
+            return self._extract_keywords_sequential(urls)
+
+        # 并行处理大量URL（同步版本）
+        return self._extract_keywords_parallel_sync(urls)
+
+    def _extract_keywords_sequential(self, urls: List[str]) -> Dict[str, Set[str]]:
+        """
+        顺序提取关键词（用于小批量URL）
+
+        Args:
+            urls: URL列表
+
         Returns:
             Dict[str, Set[str]]: URL到关键词集合的映射
         """
         from .utils import ProgressLogger
 
         url_keywords_map = {}
-        # 优化进度输出：对于大量URL，减少输出频率
-        log_interval = max(1000, len(urls) // 20)  # 最少1000，或总数的5%
+        log_interval = max(100, len(urls) // 10)
         progress = ProgressLogger(self.logger, len(urls), log_interval)
-        
+
         for url in urls:
             progress.update()
             rule = self.rule_engine.get_rule_for_url(url)
-            # 现在get_rule_for_url总是返回规则（特定规则或默认规则）
             keywords = self.keyword_extractor.extract_keywords(url, rule)
             if keywords:
                 url_keywords_map[url] = keywords
-            else:
-                # 减少冗余DEBUG日志 - 只在DEBUG级别且每1000个记录一次
-                if self.logger.isEnabledFor(logging.DEBUG) and len(url_keywords_map) % 1000 == 0:
-                    self.logger.debug(f"处理进度: {len(url_keywords_map)} 个URL已提取关键词")
-        
+
         progress.finish()
         self.logger.info(f"从 {len(urls)} 个URL中提取到 {len(url_keywords_map)} 个有效URL的关键词")
         return url_keywords_map
+
+    def _extract_keywords_parallel_sync(self, urls: List[str]) -> Dict[str, Set[str]]:
+        """
+        并行提取关键词（同步版本，用于大批量URL）
+
+        Args:
+            urls: URL列表
+
+        Returns:
+            Dict[str, Set[str]]: URL到关键词集合的映射
+        """
+        from .utils import ProgressLogger
+        import concurrent.futures
+        import os
+
+        # 确定并行度：CPU核心数的2倍，但不超过8
+        max_workers = min(8, (os.cpu_count() or 4) * 2)
+
+        # 计算批次大小：确保每个批次有足够的工作量
+        batch_size = max(500, len(urls) // (max_workers * 4))
+
+        self.logger.info(f"并行关键词提取: {len(urls)} 个URL, {max_workers} 个工作线程, 批次大小 {batch_size}")
+
+        # 分批处理
+        batches = [urls[i:i + batch_size] for i in range(0, len(urls), batch_size)]
+
+        # 进度跟踪
+        log_interval = max(1000, len(urls) // 20)
+        progress = ProgressLogger(self.logger, len(urls), log_interval)
+
+        # 并行处理批次
+        url_keywords_map = {}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有批次任务
+            future_to_batch = {
+                executor.submit(self._process_url_batch, batch, progress): batch
+                for batch in batches
+            }
+
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_batch):
+                try:
+                    batch_result = future.result()
+                    url_keywords_map.update(batch_result)
+                except Exception as e:
+                    batch = future_to_batch[future]
+                    self.logger.error(f"批次处理失败 ({len(batch)} URLs): {e}")
+
+        progress.finish()
+        self.logger.info(f"并行提取完成: 从 {len(urls)} 个URL中提取到 {len(url_keywords_map)} 个有效URL的关键词")
+        return url_keywords_map
+
+    async def _extract_keywords_parallel(self, urls: List[str]) -> Dict[str, Set[str]]:
+        """
+        并行提取关键词（用于大批量URL）
+
+        Args:
+            urls: URL列表
+
+        Returns:
+            Dict[str, Set[str]]: URL到关键词集合的映射
+        """
+        from .utils import ProgressLogger
+        import concurrent.futures
+        import os
+
+        # 确定并行度：CPU核心数的2倍，但不超过8
+        max_workers = min(8, (os.cpu_count() or 4) * 2)
+
+        # 计算批次大小：确保每个批次有足够的工作量
+        batch_size = max(500, len(urls) // (max_workers * 4))
+
+        self.logger.info(f"并行关键词提取: {len(urls)} 个URL, {max_workers} 个工作线程, 批次大小 {batch_size}")
+
+        # 分批处理
+        batches = [urls[i:i + batch_size] for i in range(0, len(urls), batch_size)]
+
+        # 进度跟踪
+        log_interval = max(1000, len(urls) // 20)
+        progress = ProgressLogger(self.logger, len(urls), log_interval)
+
+        # 并行处理批次
+        url_keywords_map = {}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有批次任务
+            future_to_batch = {
+                executor.submit(self._process_url_batch, batch, progress): batch
+                for batch in batches
+            }
+
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_batch):
+                try:
+                    batch_result = future.result()
+                    url_keywords_map.update(batch_result)
+                except Exception as e:
+                    batch = future_to_batch[future]
+                    self.logger.error(f"批次处理失败 ({len(batch)} URLs): {e}")
+
+        progress.finish()
+        self.logger.info(f"并行提取完成: 从 {len(urls)} 个URL中提取到 {len(url_keywords_map)} 个有效URL的关键词")
+        return url_keywords_map
+
+    def _process_url_batch(self, urls_batch: List[str], progress: 'ProgressLogger') -> Dict[str, Set[str]]:
+        """
+        处理URL批次
+
+        Args:
+            urls_batch: URL批次
+            progress: 进度记录器
+
+        Returns:
+            Dict[str, Set[str]]: 批次结果
+        """
+        batch_result = {}
+
+        for url in urls_batch:
+            try:
+                rule = self.rule_engine.get_rule_for_url(url)
+                keywords = self.keyword_extractor.extract_keywords(url, rule)
+                if keywords:
+                    batch_result[url] = keywords
+
+                # 线程安全的进度更新
+                progress.update()
+
+            except Exception as e:
+                # 记录错误但继续处理
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"URL处理失败 {url}: {e}")
+
+        return batch_result

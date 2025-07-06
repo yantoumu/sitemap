@@ -153,39 +153,45 @@ def get_logger(name: str) -> logging.Logger:
 
 
 class ProgressLogger:
-    """进度日志器"""
-    
-    def __init__(self, logger: logging.Logger, total: int, 
+    """进度日志器 - 线程安全版本"""
+
+    def __init__(self, logger: logging.Logger, total: int,
                  log_interval: int = 100):
         """
         初始化进度日志器
-        
+
         Args:
             logger: 日志器
             total: 总数量
             log_interval: 日志间隔
         """
+        import threading
+
         self.logger = logger
         self.total = total
         self.log_interval = log_interval
         self.current = 0
+        self._lock = threading.Lock()  # 线程安全锁
     
     def update(self, count: int = 1) -> None:
         """
-        更新进度
+        更新进度 - 线程安全版本
 
         Args:
             count: 增加的数量
         """
-        self.current += count
+        with self._lock:
+            self.current += count
+            current_value = self.current
 
-        if self.current % self.log_interval == 0 or self.current == self.total:
-            percentage = (self.current / self.total) * 100
+        # 在锁外进行日志记录，避免长时间持有锁
+        if current_value % self.log_interval == 0 or current_value == self.total:
+            percentage = (current_value / self.total) * 100
             # 简化输出格式，只显示百分比和关键节点
-            if percentage % 10 == 0 or self.current == self.total:
-                self.logger.info(f"进度: {percentage:.0f}% ({self.current:,}/{self.total:,})")
+            if percentage % 10 == 0 or current_value == self.total:
+                self.logger.info(f"进度: {percentage:.0f}% ({current_value:,}/{self.total:,})")
             else:
-                self.logger.debug(f"进度: {percentage:.1f}% ({self.current:,}/{self.total:,})")
+                self.logger.debug(f"进度: {percentage:.1f}% ({current_value:,}/{self.total:,})")
     
     def finish(self) -> None:
         """完成进度记录"""

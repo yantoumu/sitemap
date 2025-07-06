@@ -14,7 +14,19 @@ class KeywordProcessor:
     def __init__(self):
         """初始化关键词处理器"""
         self.logger = logging.getLogger(__name__)
-        
+
+        # 性能优化：关键词标准化缓存
+        self._normalization_cache = {}
+        self._cache_max_size = 10000  # 限制缓存大小
+
+        # 预编译正则表达式
+        self._compiled_patterns = {
+            'clean_default': re.compile(r'[^a-zA-Z0-9\u4e00-\u9fa5\u0400-\u04ff\s]'),
+            'split_chars': re.compile(r'[-_\s]+'),
+            'whitespace': re.compile(r'\s+'),
+            'non_alphanumeric': re.compile(r'[^\w\s]', re.UNICODE)
+        }
+
         # 默认停用词
         self.default_stop_words = {
             # 英文停用词
@@ -37,23 +49,54 @@ class KeywordProcessor:
     
     def normalize_keywords(self, keywords: Set[str]) -> Set[str]:
         """
-        标准化关键词集合
-        
+        标准化关键词集合 - 优化版本使用批量处理
+
         Args:
             keywords: 原始关键词集合
-            
+
         Returns:
             Set[str]: 标准化后的关键词集合
         """
+        if not keywords:
+            return set()
+
+        # 批量处理，减少函数调用开销
         normalized = set()
-        
+
         for keyword in keywords:
-            normalized_keyword = self.normalize_keyword(keyword)
+            # 使用缓存的标准化
+            normalized_keyword = self._normalize_keyword_cached(keyword)
             if normalized_keyword:
                 normalized.add(normalized_keyword)
-        
+
         return normalized
-    
+
+    def _normalize_keyword_cached(self, keyword: str) -> str:
+        """
+        带缓存的关键词标准化
+
+        Args:
+            keyword: 原始关键词
+
+        Returns:
+            str: 标准化后的关键词
+        """
+        if not keyword:
+            return ""
+
+        # 检查缓存
+        if keyword in self._normalization_cache:
+            return self._normalization_cache[keyword]
+
+        # 标准化处理
+        normalized = self.normalize_keyword(keyword)
+
+        # 缓存结果（限制缓存大小）
+        if len(self._normalization_cache) < self._cache_max_size:
+            self._normalization_cache[keyword] = normalized
+
+        return normalized
+
     def normalize_keyword(self, keyword: str) -> str:
         """
         标准化单个关键词
@@ -123,9 +166,9 @@ class KeywordProcessor:
                 keyword = re.sub(clean_regex, "", keyword)
             except re.error as e:
                 self.logger.error(f"清理正则表达式错误 {clean_regex}: {e}")
-        
+
         # 默认清理：移除特殊字符，保留字母、数字、中文
-        keyword = re.sub(r'[^\w\u4e00-\u9fa5]', '', keyword)
+        keyword = self._compiled_patterns['non_alphanumeric'].sub('', keyword)
         
         return keyword.strip()
     
@@ -150,7 +193,7 @@ class KeywordProcessor:
         split_chars = split_chars or "-_"
 
         # 替换分隔符为空格
-        processed_segment = re.sub(f'[{re.escape(split_chars)}]+', ' ', segment)
+        processed_segment = self._compiled_patterns['split_chars'].sub(' ', segment)
 
         # 应用清理规则
         if clean_regex:
@@ -160,10 +203,10 @@ class KeywordProcessor:
                 self.logger.error(f"清理正则表达式错误 {clean_regex}: {e}")
 
         # 默认清理：移除特殊字符，保留字母、数字、中文和空格
-        processed_segment = re.sub(r'[^\w\u4e00-\u9fa5\s]', '', processed_segment)
+        processed_segment = self._compiled_patterns['non_alphanumeric'].sub('', processed_segment)
 
         # 标准化空格并转小写
-        processed_segment = re.sub(r'\s+', ' ', processed_segment).strip().lower()
+        processed_segment = self._compiled_patterns['whitespace'].sub(' ', processed_segment).strip().lower()
 
         # 验证并添加关键词（保持空格分割格式）
         if processed_segment and len(processed_segment) <= 50:
