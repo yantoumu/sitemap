@@ -95,7 +95,8 @@ class SitemapParser:
             aiohttp.ClientError: 网络请求错误
         """
         if depth > self.max_depth:
-            self.logger.warning(f"达到最大递归深度 {self.max_depth}，跳过: {url}")
+            safe_url = LogSecurity.sanitize_url(url)
+            self.logger.warning(f"达到最大递归深度 {self.max_depth}，跳过: {safe_url}")
             return set()
         
         try:
@@ -133,7 +134,8 @@ class SitemapParser:
                 return self._extract_urls_from_sitemap(root, url)
                 
         except ET.ParseError as e:
-            self.logger.error(f"XML解析错误 {url}: {e}")
+            safe_url = LogSecurity.sanitize_url(url)
+            self.logger.error(f"XML解析错误 {safe_url}: {e}")
             return set()
         except Exception as e:
             # 使用安全日志记录，隐藏敏感URL
@@ -232,7 +234,8 @@ class SitemapParser:
 
             async with self.session.get(url, timeout=30) as response:
                 if response.status != 200:
-                    self.logger.error(f"HTTP错误 {response.status}: {url}")
+                    safe_url = LogSecurity.sanitize_url(url)
+                    self.logger.error(f"HTTP错误 {response.status}: {safe_url}")
                     return None
                 
                 content = await response.read()
@@ -242,7 +245,8 @@ class SitemapParser:
                     try:
                         content = gzip.decompress(content)
                     except gzip.BadGzipFile:
-                        self.logger.error(f"gzip解压失败: {url}")
+                        safe_url = LogSecurity.sanitize_url(url)
+                        self.logger.error(f"gzip解压失败: {safe_url}")
                         return None
                 
                 # 解码为字符串
@@ -256,14 +260,17 @@ class SitemapParser:
                         except UnicodeDecodeError:
                             continue
                     
-                    self.logger.error(f"无法解码内容: {url}")
+                    safe_url = LogSecurity.sanitize_url(url)
+                    self.logger.error(f"无法解码内容: {safe_url}")
                     return None
-                    
+
         except asyncio.TimeoutError:
-            self.logger.error(f"请求超时: {url}")
+            safe_url = LogSecurity.sanitize_url(url)
+            self.logger.error(f"请求超时: {safe_url}")
             return None
         except aiohttp.ClientError as e:
-            self.logger.error(f"网络请求错误 {url}: {e}")
+            safe_url = LogSecurity.sanitize_url(url)
+            self.logger.error(f"网络请求错误 {safe_url}: {e}")
             return None
     
     def _is_gzipped(self, content: bytes) -> bool:
@@ -619,7 +626,8 @@ class SitemapParser:
 
         for i, headers in enumerate(header_configs):
             try:
-                self.logger.info(f"尝试特殊配置 {i+1}/{len(header_configs)}: {url}")
+                safe_url = LogSecurity.sanitize_url(url)
+                self.logger.info(f"尝试特殊配置 {i+1}/{len(header_configs)}: {safe_url}")
 
                 timeout = aiohttp.ClientTimeout(total=30)
                 async with aiohttp.ClientSession(headers=headers, timeout=timeout) as special_session:
@@ -632,31 +640,37 @@ class SitemapParser:
                                 try:
                                     content = gzip.decompress(content)
                                 except gzip.BadGzipFile:
-                                    self.logger.error(f"gzip解压失败: {url}")
+                                    safe_url = LogSecurity.sanitize_url(url)
+                                    self.logger.error(f"gzip解压失败: {safe_url}")
                                     continue
 
                             # 解码为字符串
                             try:
                                 result = content.decode('utf-8')
-                                self.logger.info(f"特殊配置 {i+1} 成功: {url}")
+                                safe_url = LogSecurity.sanitize_url(url)
+                                self.logger.info(f"特殊配置 {i+1} 成功: {safe_url}")
                                 return result
                             except UnicodeDecodeError:
                                 # 尝试其他编码
                                 for encoding in ['gbk', 'gb2312', 'latin1']:
                                     try:
                                         result = content.decode(encoding)
-                                        self.logger.info(f"特殊配置 {i+1} 成功 (编码 {encoding}): {url}")
+                                        safe_url = LogSecurity.sanitize_url(url)
+                                        self.logger.info(f"特殊配置 {i+1} 成功 (编码 {encoding}): {safe_url}")
                                         return result
                                     except UnicodeDecodeError:
                                         continue
                         else:
-                            self.logger.warning(f"特殊配置 {i+1} HTTP错误 {response.status}: {url}")
+                            safe_url = LogSecurity.sanitize_url(url)
+                            self.logger.warning(f"特殊配置 {i+1} HTTP错误 {response.status}: {safe_url}")
 
             except Exception as e:
-                self.logger.warning(f"特殊配置 {i+1} 失败 {url}: {e}")
+                safe_url = LogSecurity.sanitize_url(url)
+                self.logger.warning(f"特殊配置 {i+1} 失败 {safe_url}: {e}")
                 continue
 
-        self.logger.error(f"所有特殊配置都失败: {url}")
+        safe_url = LogSecurity.sanitize_url(url)
+        self.logger.error(f"所有特殊配置都失败: {safe_url}")
         return None
 
 
@@ -823,7 +837,8 @@ class SitemapParserFactory:
 
         for i, headers in enumerate(header_configs):
             try:
-                self.logger.info(f"尝试特殊配置 {i+1}/{len(header_configs)}: {url}")
+                safe_url = LogSecurity.sanitize_url(url)
+                self.logger.info(f"尝试特殊配置 {i+1}/{len(header_configs)}: {safe_url}")
 
                 timeout = aiohttp.ClientTimeout(total=30)
                 async with aiohttp.ClientSession(headers=headers, timeout=timeout) as special_session:
@@ -836,29 +851,35 @@ class SitemapParserFactory:
                                 try:
                                     content = gzip.decompress(content)
                                 except gzip.BadGzipFile:
-                                    self.logger.error(f"gzip解压失败: {url}")
+                                    safe_url = LogSecurity.sanitize_url(url)
+                                    self.logger.error(f"gzip解压失败: {safe_url}")
                                     continue
 
                             # 解码为字符串
                             try:
                                 result = content.decode('utf-8')
-                                self.logger.info(f"特殊配置 {i+1} 成功: {url}")
+                                safe_url = LogSecurity.sanitize_url(url)
+                                self.logger.info(f"特殊配置 {i+1} 成功: {safe_url}")
                                 return result
                             except UnicodeDecodeError:
                                 # 尝试其他编码
                                 for encoding in ['gbk', 'gb2312', 'latin1']:
                                     try:
                                         result = content.decode(encoding)
-                                        self.logger.info(f"特殊配置 {i+1} 成功 (编码 {encoding}): {url}")
+                                        safe_url = LogSecurity.sanitize_url(url)
+                                        self.logger.info(f"特殊配置 {i+1} 成功 (编码 {encoding}): {safe_url}")
                                         return result
                                     except UnicodeDecodeError:
                                         continue
                         else:
-                            self.logger.warning(f"特殊配置 {i+1} HTTP错误 {response.status}: {url}")
+                            safe_url = LogSecurity.sanitize_url(url)
+                            self.logger.warning(f"特殊配置 {i+1} HTTP错误 {response.status}: {safe_url}")
 
             except Exception as e:
-                self.logger.warning(f"特殊配置 {i+1} 失败 {url}: {e}")
+                safe_url = LogSecurity.sanitize_url(url)
+                self.logger.warning(f"特殊配置 {i+1} 失败 {safe_url}: {e}")
                 continue
 
-        self.logger.error(f"所有特殊配置都失败: {url}")
+        safe_url = LogSecurity.sanitize_url(url)
+        self.logger.error(f"所有特殊配置都失败: {safe_url}")
         return None

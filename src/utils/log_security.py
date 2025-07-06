@@ -42,37 +42,29 @@ class LogSecurity:
     @classmethod
     def sanitize_url(cls, url: str) -> str:
         """
-        对URL进行脱敏处理
-        
+        对URL进行脱敏处理 - 隐藏所有域名以保护隐私
+
         Args:
             url: 原始URL
-            
+
         Returns:
-            str: 脱敏后的URL
+            str: 脱敏后的URL，格式为 https://***
         """
         if not url:
             return url
-            
+
         try:
             parsed = urlparse(url)
-            
-            # 检查是否是敏感域名
-            if any(domain in parsed.netloc.lower() for domain in cls.SENSITIVE_DOMAINS):
-                # 只保留协议和路径，隐藏域名
-                return f"{parsed.scheme}://***{parsed.path}"
-            
-            # 对于其他URL，保留域名但隐藏查询参数
-            if parsed.query:
-                return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?***"
-            
-            return url
-            
+
+            # 对所有URL进行脱敏，只保留协议，隐藏域名和路径
+            if parsed.scheme:
+                return f"{parsed.scheme}://***"
+            else:
+                return "https://***"
+
         except Exception:
-            # 如果解析失败，进行简单的域名替换
-            for domain in cls.SENSITIVE_DOMAINS:
-                if domain in url.lower():
-                    return url.replace(domain, '***')
-            return url
+            # 如果解析失败，返回通用脱敏格式
+            return "https://***"
     
     @classmethod
     def sanitize_text(cls, text: str) -> str:
