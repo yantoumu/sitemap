@@ -35,7 +35,7 @@ env:
 jobs:
   sitemap-analysis:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+
     env:
       SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
       BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
