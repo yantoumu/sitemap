@@ -46,6 +46,9 @@ class DataProcessor:
         Returns:
             Dict[str, Any]: 处理结果统计
         """
+        # 数据类型验证和转换
+        url_keywords_map = self._validate_and_convert_url_keywords_map(url_keywords_map)
+
         if not url_keywords_map:
             return self._create_empty_result()
 
@@ -118,6 +121,16 @@ class DataProcessor:
         Returns:
             Dict[str, Any]: 过滤后的成功数据
         """
+        # 防御性类型检查：确保url_keywords_map是字典类型
+        if not isinstance(url_keywords_map, dict):
+            self.logger.error(f"url_keywords_map类型错误: 期望dict，实际{type(url_keywords_map)}")
+            raise TypeError(f"url_keywords_map必须是字典类型，实际类型: {type(url_keywords_map)}")
+
+        # 防御性类型检查：确保keyword_data是字典类型
+        if not isinstance(keyword_data, dict):
+            self.logger.error(f"keyword_data类型错误: 期望dict，实际{type(keyword_data)}")
+            raise TypeError(f"keyword_data必须是字典类型，实际类型: {type(keyword_data)}")
+
         # 过滤出成功查询的关键词
         successful_keywords = {k: v for k, v in keyword_data.items() if v}
 
@@ -445,6 +458,48 @@ class DataProcessor:
             'seo_api_stats': self.seo_api.get_statistics(),
             'backend_api_stats': self.backend_api.get_statistics()
         }
+
+    def _validate_and_convert_url_keywords_map(self, url_keywords_map) -> Dict[str, Set[str]]:
+        """
+        验证和转换url_keywords_map数据类型
+
+        Args:
+            url_keywords_map: 输入的URL关键词映射（可能是各种类型）
+
+        Returns:
+            Dict[str, Set[str]]: 标准化的URL关键词映射
+
+        Raises:
+            TypeError: 如果数据类型无法转换
+        """
+        # 如果是None或空，返回空字典
+        if not url_keywords_map:
+            return {}
+
+        # 如果已经是正确的字典类型，直接返回
+        if isinstance(url_keywords_map, dict):
+            # 验证字典的值是否为Set类型
+            for url, keywords in url_keywords_map.items():
+                if not isinstance(keywords, set):
+                    self.logger.warning(f"URL {url} 的关键词不是set类型，正在转换: {type(keywords)}")
+                    if isinstance(keywords, (list, tuple)):
+                        url_keywords_map[url] = set(keywords)
+                    else:
+                        self.logger.error(f"无法转换关键词类型: {type(keywords)}")
+                        url_keywords_map[url] = set()
+            return url_keywords_map
+
+        # 如果是列表，尝试转换（这可能是问题所在）
+        if isinstance(url_keywords_map, list):
+            self.logger.error(f"url_keywords_map是列表类型，无法转换为字典: {type(url_keywords_map)}")
+            self.logger.error(f"列表内容预览: {url_keywords_map[:3] if len(url_keywords_map) > 0 else '空列表'}")
+            raise TypeError(f"url_keywords_map不能是列表类型，期望字典类型，实际: {type(url_keywords_map)}")
+
+        # 其他类型都无法处理
+        self.logger.error(f"url_keywords_map类型不支持: {type(url_keywords_map)}")
+        raise TypeError(f"url_keywords_map类型不支持: {type(url_keywords_map)}")
+
+        return {}
     
     async def health_check(self) -> Dict[str, bool]:
         """
@@ -517,9 +572,11 @@ class URLProcessor:
             Dict[str, Set[str]]: URL到关键词集合的映射
         """
         from .utils import ProgressLogger
-        
+
         url_keywords_map = {}
-        progress = ProgressLogger(self.logger, len(urls), 100)
+        # 优化进度输出：对于大量URL，减少输出频率
+        log_interval = max(1000, len(urls) // 20)  # 最少1000，或总数的5%
+        progress = ProgressLogger(self.logger, len(urls), log_interval)
         
         for url in urls:
             progress.update()

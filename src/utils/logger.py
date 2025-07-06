@@ -173,15 +173,19 @@ class ProgressLogger:
     def update(self, count: int = 1) -> None:
         """
         更新进度
-        
+
         Args:
             count: 增加的数量
         """
         self.current += count
-        
+
         if self.current % self.log_interval == 0 or self.current == self.total:
             percentage = (self.current / self.total) * 100
-            self.logger.info(f"进度: {self.current}/{self.total} ({percentage:.1f}%)")
+            # 简化输出格式，只显示百分比和关键节点
+            if percentage % 10 == 0 or self.current == self.total:
+                self.logger.info(f"进度: {percentage:.0f}% ({self.current:,}/{self.total:,})")
+            else:
+                self.logger.debug(f"进度: {percentage:.1f}% ({self.current:,}/{self.total:,})")
     
     def finish(self) -> None:
         """完成进度记录"""
