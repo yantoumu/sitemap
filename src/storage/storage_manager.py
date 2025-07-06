@@ -252,14 +252,17 @@ class StorageManager:
         """
         expired_hashes = self.processor.find_expired_records(self.data, self.retention_days)
 
-        # 删除过期记录
-        for url_hash in expired_hashes:
-            del self.data['processed_urls'][url_hash]
+        # 删除过期记录（仅适用于旧版本字典格式）
+        if expired_hashes and isinstance(self.data['processed_urls'], dict):
+            for url_hash in expired_hashes:
+                if url_hash in self.data['processed_urls']:
+                    del self.data['processed_urls'][url_hash]
 
-        if expired_hashes:
             # 更新统计
             self.data['statistics']['last_cleanup'] = datetime.now().isoformat()
             self.logger.info(f"清理了 {len(expired_hashes)} 条过期数据")
+        elif expired_hashes:
+            self.logger.debug("新版本数据格式不支持过期清理")
 
         return len(expired_hashes)
     

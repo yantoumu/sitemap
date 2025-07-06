@@ -151,34 +151,46 @@ class DataProcessor:
 
         return True
     
-    def find_expired_records(self, data: Dict[str, Any], 
+    def find_expired_records(self, data: Dict[str, Any],
                            retention_days: int) -> List[str]:
         """
         查找过期记录
-        
+
         Args:
             data: 存储数据
             retention_days: 保留天数
-            
+
         Returns:
             List[str]: 过期记录的哈希列表
         """
         if retention_days <= 0:
             return []
-        
-        cutoff_date = datetime.now() - timedelta(days=retention_days)
-        expired_hashes = []
-        
-        for url_hash, record in data['processed_urls'].items():
-            try:
-                processed_at = datetime.fromisoformat(record['processed_at'])
-                if processed_at < cutoff_date:
+
+        processed_urls = data.get('processed_urls', {})
+
+        # 检查数据格式：新版本是列表，旧版本是字典
+        if isinstance(processed_urls, list):
+            # 新版本格式：processed_urls是加密URL列表，没有时间戳，不需要清理
+            self.logger.debug("新版本数据格式（列表），无需清理过期数据")
+            return []
+        elif isinstance(processed_urls, dict):
+            # 旧版本格式：processed_urls是字典，包含时间戳
+            cutoff_date = datetime.now() - timedelta(days=retention_days)
+            expired_hashes = []
+
+            for url_hash, record in processed_urls.items():
+                try:
+                    processed_at = datetime.fromisoformat(record['processed_at'])
+                    if processed_at < cutoff_date:
+                        expired_hashes.append(url_hash)
+                except (ValueError, KeyError):
+                    # 如果日期格式错误，也删除
                     expired_hashes.append(url_hash)
-            except (ValueError, KeyError):
-                # 如果日期格式错误，也删除
-                expired_hashes.append(url_hash)
-        
-        return expired_hashes
+
+            return expired_hashes
+        else:
+            self.logger.warning(f"未知的processed_urls数据格式: {type(processed_urls)}")
+            return []
     
     def update_statistics(self, data: Dict[str, Any]) -> None:
         """
