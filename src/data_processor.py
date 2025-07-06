@@ -586,7 +586,9 @@ class URLProcessor:
             if keywords:
                 url_keywords_map[url] = keywords
             else:
-                self.logger.debug(f"URL {url} 未提取到关键词")
+                # 减少冗余DEBUG日志 - 只在DEBUG级别且每1000个记录一次
+                if self.logger.isEnabledFor(logging.DEBUG) and len(url_keywords_map) % 1000 == 0:
+                    self.logger.debug(f"处理进度: {len(url_keywords_map)} 个URL已提取关键词")
         
         progress.finish()
         self.logger.info(f"从 {len(urls)} 个URL中提取到 {len(url_keywords_map)} 个有效URL的关键词")

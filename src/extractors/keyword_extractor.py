@@ -49,7 +49,9 @@ class KeywordExtractor:
             # 过滤停用词
             keywords = self.processor.filter_keywords(keywords, rule.stop_words)
             
-            self.logger.debug(f"从URL提取 {len(keywords)} 个关键词: {LogSecurity.sanitize_url(url)}")
+            # 减少冗余DEBUG日志 - 只在提取到关键词时记录
+            if keywords and len(keywords) > 0:
+                self.logger.debug(f"从URL提取 {len(keywords)} 个关键词: {LogSecurity.sanitize_url(url)}")
             return keywords
             
         except Exception as e:

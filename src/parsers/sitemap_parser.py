@@ -101,11 +101,11 @@ class SitemapParser:
         try:
             # 使用安全日志记录，隐藏敏感URL
             safe_url = LogSecurity.sanitize_url(url)
-            self.logger.info(f"解析sitemap (深度 {depth}): {safe_url}")
+            self.logger.debug(f"解析sitemap (深度 {depth}): {safe_url}")
 
             # 检查是否是RSS格式
             if self._is_rss_url(url):
-                self.logger.info(f"检测到RSS格式，使用RSS解析器")
+                self.logger.debug(f"检测到RSS格式，使用RSS解析器")
                 return await self._parse_rss(url)
 
             # 下载sitemap内容

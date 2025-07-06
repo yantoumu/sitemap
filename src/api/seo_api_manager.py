@@ -61,7 +61,11 @@ class SEOAPIManager:
             return {}
         
         async with self.request_lock:
-            self.logger.info(f"开始串行查询 {len(keywords)} 个关键词")
+            # 减少冗余日志：只在大量关键词时显示INFO级别
+            if len(keywords) > 50:
+                self.logger.info(f"开始串行查询 {len(keywords)} 个关键词")
+            else:
+                self.logger.debug(f"开始串行查询 {len(keywords)} 个关键词")
             
             # 计算等待时间
             current_time = time.time()
