@@ -142,7 +142,7 @@ class SEOAPIManager:
         if not keywords:
             return {}
         
-        url = f"{self.api_urls[self.current_api_index]}/keywords"
+        url = f"{self.api_urls[self.current_api_index]}/api/keywords"
         params = {"keyword": ",".join(keywords)}
         
         timeout = aiohttp.ClientTimeout(total=self.timeout)
