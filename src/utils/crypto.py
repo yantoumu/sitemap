@@ -221,28 +221,37 @@ class CryptoUtils:
 
 def ensure_encryption_key(env_var: str = 'ENCRYPTION_KEY') -> str:
     """
-    确保加密密钥存在，不存在则生成新的
-    
+    确保加密密钥存在，只从环境变量获取
+
     Args:
         env_var: 环境变量名
-        
+
     Returns:
         str: 加密密钥
+
+    Raises:
+        ValueError: 当环境变量未设置或密钥无效时
     """
     logger = logging.getLogger(__name__)
-    
-    # 从环境变量获取
+
+    # 只从环境变量获取
     key = os.getenv(env_var)
-    
-    if key and CryptoUtils.validate_key(key):
-        logger.info("使用现有的加密密钥")
-        return key
-    
-    # 生成新密钥
-    new_key = CryptoUtils.generate_key()
-    logger.warning(f"生成新的加密密钥，请设置环境变量 {env_var}={new_key}")
-    
-    return new_key
+
+    if not key:
+        raise ValueError(f"环境变量 {env_var} 未设置。请设置加密密钥环境变量。")
+
+    # 验证密钥格式（支持44字符Fernet密钥和66字符吉利密钥）
+    if len(key) == 44:
+        if not CryptoUtils.validate_key(key):
+            raise ValueError(f"环境变量 {env_var} 中的44字符Fernet密钥无效。请检查密钥格式。")
+    elif len(key) == 66:
+        if not LuckyCrypto.validate_lucky_key(key):
+            raise ValueError(f"环境变量 {env_var} 中的66字符吉利密钥无效。请检查密钥格式。")
+    else:
+        raise ValueError(f"环境变量 {env_var} 中的密钥长度无效。支持44字符Fernet密钥或66字符吉利密钥，当前长度: {len(key)}")
+
+    logger.info("使用环境变量中的加密密钥")
+    return key
 
 
 def create_env_file_template(file_path: str = '.env') -> None:

@@ -138,6 +138,38 @@ class StorageManager:
         """
         encrypted_url = self.encrypt_url(url)
         return encrypted_url in self.data['processed_urls']
+
+    def is_keyword_processed(self, keyword: str) -> bool:
+        """
+        检查关键词是否已处理
+
+        Args:
+            keyword: 待检查的关键词
+
+        Returns:
+            bool: 是否已处理
+        """
+        try:
+            encrypted_keyword = self.processor.encrypt_url(keyword)
+
+            # 关键词数据文件路径
+            keyword_file = Path(self.storage_file).parent / "processed_keywords.json"
+
+            if not keyword_file.exists():
+                return False
+
+            # 读取已处理关键词列表
+            with open(keyword_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    return False
+                processed_keywords = json.loads(content)
+
+            return encrypted_keyword in processed_keywords
+
+        except Exception as e:
+            self.logger.warning(f"检查关键词处理状态失败 {keyword}: {e}")
+            return False
     
     async def save_processed_url(self, url: str, keywords: List[str],
                                 seo_data: Dict[str, Dict]) -> bool:
@@ -319,6 +351,61 @@ class StorageManager:
             
             self.logger.info(f"数据导出成功: {export_file}")
             return True
+
+        except Exception as e:
+            self.logger.error(f"数据导出失败: {e}")
+            return False
+
+    async def save_processed_keyword(self, keyword: str) -> bool:
+        """
+        保存已处理的关键词 (仅保存加密标识)
+
+        Args:
+            keyword: 关键词
+
+        Returns:
+            bool: 保存是否成功
+        """
+        try:
+            # 加密关键词
+            encrypted_keyword = self.processor.encrypt_url(keyword)
+
+            # 关键词数据文件路径
+            keyword_file = Path(self.storage_file).parent / "processed_keywords.json"
+
+            # 确保目录存在
+            keyword_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # 读取现有数据
+            existing_data = []
+            if keyword_file.exists():
+                try:
+                    async with aiofiles.open(keyword_file, 'r', encoding='utf-8') as f:
+                        content = await f.read()
+                        if content.strip():
+                            existing_data = json.loads(content)
+                except (json.JSONDecodeError, Exception) as e:
+                    self.logger.warning(f"读取已处理关键词文件失败: {e}")
+                    existing_data = []
+
+            # 检查是否已存在（避免重复）
+            if encrypted_keyword not in existing_data:
+                # 添加新的加密关键词
+                existing_data.append(encrypted_keyword)
+
+                # 写入文件
+                async with aiofiles.open(keyword_file, 'w', encoding='utf-8') as f:
+                    await f.write(json.dumps(existing_data, ensure_ascii=False, indent=2))
+
+                self.logger.debug(f"保存已处理关键词: {keyword}")
+                return True
+            else:
+                self.logger.debug(f"关键词已存在，跳过保存: {keyword}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"保存已处理关键词失败 {keyword}: {e}")
+            return False
             
         except Exception as e:
             self.logger.error(f"数据导出失败: {e}")

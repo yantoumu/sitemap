@@ -46,26 +46,40 @@ class DataProcessor:
     def encrypt_url(self, url: str) -> str:
         """
         加密URL
-        
+
         Args:
             url: 原始URL
-            
+
         Returns:
-            str: 加密后的URL
+            str: 加密后的URL（Fernet格式）
         """
-        return self.cipher.encrypt(url.encode()).decode()
+        try:
+            # Fernet加密返回bytes，直接decode为字符串
+            # Fernet的输出格式是URL安全的base64，不需要额外处理
+            encrypted_bytes = self.cipher.encrypt(url.encode('utf-8'))
+            return encrypted_bytes.decode('ascii')
+        except Exception as e:
+            self.logger.error(f"URL加密失败: {e}")
+            raise
     
     def decrypt_url(self, encrypted: str) -> str:
         """
         解密URL
-        
+
         Args:
-            encrypted: 加密的URL
-            
+            encrypted: 加密的URL（Fernet格式字符串）
+
         Returns:
             str: 解密后的URL
         """
-        return self.cipher.decrypt(encrypted.encode()).decode()
+        try:
+            # Fernet格式字符串转换为bytes，然后解密
+            encrypted_bytes = encrypted.encode('ascii')
+            decrypted_bytes = self.cipher.decrypt(encrypted_bytes)
+            return decrypted_bytes.decode('utf-8')
+        except Exception as e:
+            self.logger.error(f"URL解密失败: {e}")
+            raise
     
     def get_url_hash(self, url: str) -> str:
         """

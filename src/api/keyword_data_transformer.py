@@ -176,28 +176,29 @@ class KeywordDataTransformer:
     
     def _transform_monthly_searches(self, monthly_searches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        转换月度搜索数据格式
-        
+        确保月度搜索数据格式符合API文档要求
+
         Args:
-            monthly_searches: 原始月度搜索数据
-            
+            monthly_searches: SEO API返回的月度搜索数据
+
         Returns:
-            List[Dict[str, Any]]: 转换后的月度搜索数据
+            List[Dict[str, Any]]: 符合API文档格式的月度搜索数据
         """
         if not isinstance(monthly_searches, list):
             return []
-        
+
+        # SEO API已经返回正确的英文字段名格式，只需确保year和month为字符串
         transformed = []
         for item in monthly_searches:
             if isinstance(item, dict) and all(k in item for k in ['year', 'month', 'searches']):
-                # 确保年月字段支持字符串和数字格式（API文档要求）
+                # 直接使用SEO API返回的数据，只转换year和month为字符串
                 transformed_item = {
-                    "year": str(item['year']),  # 转换为字符串格式
-                    "month": str(item['month']),  # 转换为字符串格式
-                    "searches": item['searches']
+                    "year": str(item['year']),     # 确保为字符串格式
+                    "month": str(item['month']),   # 确保为字符串格式
+                    "searches": item['searches']   # 保持数字格式
                 }
                 transformed.append(transformed_item)
-        
+
         return transformed
     
     def get_transformation_stats(self, submit_data: List[Dict[str, Any]]) -> Dict[str, Any]:

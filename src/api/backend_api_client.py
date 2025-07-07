@@ -102,7 +102,7 @@ class BackendAPIClient:
             self.logger.warning("没有数据需要提交")
             return True
         
-        self.logger.info(f"开始批量提交 {len(data)} 条数据")
+        self.logger.debug(f"开始批量提交 {len(data)} 条数据")
         
         # 准备请求头
         headers = self._prepare_headers()
@@ -117,7 +117,7 @@ class BackendAPIClient:
                 if success:
                     self.stats['successful_submissions'] += 1
                     self.stats['successful_records'] += len(batch)
-                    self.logger.info(f"批次 {i//self.batch_size + 1} 提交成功 ({len(batch)} 条)")
+                    self.logger.debug(f"批次 {i//self.batch_size + 1} 提交成功 ({len(batch)} 条)")
                 else:
                     self.stats['failed_submissions'] += 1
                     all_success = False
@@ -133,7 +133,7 @@ class BackendAPIClient:
             self.stats['total_records'] += len(batch)
         
         success_rate = (self.stats['successful_records'] / max(self.stats['total_records'], 1)) * 100
-        self.logger.info(f"批量提交完成，成功率: {success_rate:.1f}%")
+        self.logger.debug(f"批量提交完成，成功率: {success_rate:.1f}%")
         
         return all_success
     
@@ -161,17 +161,17 @@ class BackendAPIClient:
             try:
                 # 准备提交数据
                 submit_data = self._prepare_submit_data(batch)
-                
+
                 # 使用安全日志记录，隐藏敏感URL
                 safe_url = LogSecurity.sanitize_url(self.api_url)
                 self.logger.debug(f"提交数据到: {safe_url}")
-                
+
                 async with session.post(
                     self.api_url,
                     json=submit_data,
                     headers=headers
                 ) as response:
-                    
+
                     if response.status == 200:
                         response_data = await response.json()
                         return self._validate_response(response_data)
@@ -205,26 +205,29 @@ class BackendAPIClient:
         }
         
         if self.auth_token:
-            headers['Authorization'] = f'Bearer {self.auth_token}'
+            headers['X-API-Key'] = self.auth_token
         
         return headers
     
-    def _prepare_submit_data(self, batch: List[Dict]) -> Dict[str, Any]:
+    def _prepare_submit_data(self, batch: List[Dict]) -> List[Dict]:
         """
-        准备提交数据格式
-        
+        准备提交数据格式 - 根据API文档直接返回数组
+
         Args:
             batch: 原始数据批次
-            
+
         Returns:
-            Dict[str, Any]: 格式化的提交数据
+            List[Dict]: 符合API文档格式的数据数组
         """
-        return {
-            'data': batch,
-            'timestamp': datetime.now().isoformat(),
-            'source': 'sitemap_keyword_analyzer',
-            'batch_size': len(batch)
-        }
+        # 打印要提交的数据格式供检查（仅调试模式）
+        self.logger.debug(f"📋 要提交的数据格式 ({len(batch)} 条):")
+        for i, record in enumerate(batch[:2]):  # 只打印前2条作为示例
+            self.logger.debug(f"   记录 {i+1}: {record}")
+        if len(batch) > 2:
+            self.logger.debug(f"   ... 还有 {len(batch)-2} 条类似数据")
+
+        # 根据API文档，直接提交数组格式
+        return batch
     
     def _validate_response(self, response_data: Any) -> bool:
         """

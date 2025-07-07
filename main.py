@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import List
 import json
+from dotenv import load_dotenv
 
 from src.sitemap_analyzer import SitemapKeywordAnalyzer
 from src.utils import setup_logging, get_logger, ensure_encryption_key, create_env_file_template
@@ -216,8 +217,11 @@ async def run_analysis(analyzer: SitemapKeywordAnalyzer,
 
 async def main() -> None:
     """主函数"""
+    # 加载环境变量文件
+    load_dotenv()
+
     args = parse_arguments()
-    
+
     # 创建环境变量文件
     if args.create_env:
         create_env_file_template()
@@ -225,7 +229,13 @@ async def main() -> None:
         return
     
     # 确保加密密钥存在
-    ensure_encryption_key()
+    try:
+        ensure_encryption_key()
+    except ValueError as e:
+        print(f"❌ 加密密钥错误: {e}")
+        print("💡 请设置环境变量 ENCRYPTION_KEY，例如：")
+        print("   export ENCRYPTION_KEY=your_encryption_key_here")
+        return
     
     # 设置日志
     log_file = args.log_file or 'logs/sitemap_analyzer.log'

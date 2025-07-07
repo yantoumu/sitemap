@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import time
 from typing import List, Set, Dict, Any
 from datetime import datetime
 import logging
@@ -12,7 +13,7 @@ from .api import SEOAPIManager, BackendAPIClient
 from .api.keyword_data_transformer import KeywordDataTransformer
 from .api.keyword_metrics_client import KeywordMetricsClient
 from .storage import StorageManager
-from .utils import get_logger, TimingLogger
+from .utils import get_logger, TimingLogger, ProgressLogger
 
 
 class DataProcessor:
@@ -52,17 +53,54 @@ class DataProcessor:
         if not url_keywords_map:
             return self._create_empty_result()
 
-        # 1. 获取所有唯一关键词
+        # 1. 获取所有唯一关键词 - 添加类型安全检查
         all_keywords = set()
-        for keywords in url_keywords_map.values():
-            all_keywords.update(keywords)
+
+        # 防御性检查：确保url_keywords_map是字典类型
+        if not isinstance(url_keywords_map, dict):
+            self.logger.error(f"❌ url_keywords_map类型错误: {type(url_keywords_map)}, 期望dict类型")
+            self.logger.error(f"❌ 数据内容: {str(url_keywords_map)[:200]}...")
+            return self._create_empty_result()
+
+        try:
+            for keywords in url_keywords_map.values():
+                if isinstance(keywords, (set, list, tuple)):
+                    all_keywords.update(keywords)
+                else:
+                    self.logger.warning(f"⚠️ 跳过无效关键词类型: {type(keywords)}")
+        except AttributeError as e:
+            self.logger.error(f"❌ AttributeError: {e}")
+            self.logger.error(f"❌ url_keywords_map类型: {type(url_keywords_map)}")
+            self.logger.error(f"❌ url_keywords_map内容: {str(url_keywords_map)[:500]}...")
+            import traceback
+            self.logger.error(f"❌ 完整堆栈: {traceback.format_exc()}")
+            return self._create_empty_result()
+        except Exception as e:
+            self.logger.error(f"❌ 提取关键词时发生错误: {e}")
+            self.logger.error(f"❌ url_keywords_map类型: {type(url_keywords_map)}")
+            return self._create_empty_result()
 
         self.logger.info(f"共提取 {len(all_keywords)} 个唯一关键词")
 
-        # 2. 查询关键词数据
-        keyword_data = await self._query_keywords(list(all_keywords))
+        # 2. 过滤已处理的关键词（去重检查）
+        new_keywords = self._filter_processed_keywords(all_keywords)
+        if len(new_keywords) < len(all_keywords):
+            filtered_count = len(all_keywords) - len(new_keywords)
+            self.logger.info(f"过滤已处理关键词: {filtered_count} 个，剩余 {len(new_keywords)} 个待处理")
 
-        # 3. 严格过滤成功数据
+            # 更新URL映射，只保留新关键词
+            url_keywords_map = self._update_url_keywords_map(url_keywords_map, new_keywords)
+
+            if not new_keywords:
+                self.logger.info("所有关键词都已处理，跳过查询")
+                return self._create_empty_result()
+        else:
+            self.logger.info("所有关键词都是新的，无需过滤")
+
+        # 3. 查询关键词数据
+        keyword_data = await self._query_keywords(list(new_keywords), url_keywords_map)
+
+        # 4. 严格过滤成功数据
         successful_data = self._filter_successful_data(keyword_data, url_keywords_map)
 
         if not successful_data['keyword_data'] and not successful_data['url_keywords_map']:
@@ -76,38 +114,171 @@ class DataProcessor:
                 'submit_success': False
             }
 
-        # 4. 并行处理：直接使用asyncio.gather同时执行本地存储和后端提交
+        # 5. 并行处理：直接使用asyncio.gather同时执行本地存储和后端提交
         storage_result, submit_result = await self._execute_parallel_simple(
             successful_data['url_keywords_map'],
             successful_data['keyword_data']
         )
 
+        # 输出最终统计信息
+        successful_keywords = len(successful_data['keyword_data'])
+        submitted_records = submit_result.get('submitted_count', 0)
+
+        self.logger.info(f"📊 处理完成统计:")
+        self.logger.info(f"   ✅ 成功查询关键词: {successful_keywords} 个")
+        self.logger.info(f"   ✅ 成功提交记录: {submitted_records} 条")
+
         return {
             'total_keywords': len(all_keywords),
-            'successful_keywords': len(successful_data['keyword_data']),
+            'successful_keywords': successful_keywords,
             'saved_urls': storage_result.get('saved_count', 0),
-            'submitted_records': submit_result.get('submitted_count', 0),
+            'submitted_records': submitted_records,
             'storage_success': storage_result.get('success', False),
             'submit_success': submit_result.get('success', False),
             'storage_error': storage_result.get('error'),
             'submit_error': submit_result.get('error')
         }
-    
-    async def _query_keywords(self, keywords: List[str]) -> Dict[str, Dict]:
+
+    def _filter_processed_keywords(self, keywords: set) -> set:
         """
-        查询所有关键词数据
-        
+        过滤已处理的关键词
+
+        Args:
+            keywords: 关键词集合
+
+        Returns:
+            set: 未处理的关键词集合
+        """
+        new_keywords = set()
+        processed_count = 0
+
+        for keyword in keywords:
+            if not self.storage.is_keyword_processed(keyword):
+                new_keywords.add(keyword)
+            else:
+                processed_count += 1
+
+        if processed_count > 0:
+            self.logger.debug(f"发现 {processed_count} 个已处理关键词")
+
+        return new_keywords
+
+    def _update_url_keywords_map(self, url_keywords_map: Dict[str, Set[str]],
+                                new_keywords: set) -> Dict[str, Set[str]]:
+        """
+        更新URL关键词映射，只保留新关键词
+
+        Args:
+            url_keywords_map: 原始URL关键词映射
+            new_keywords: 新关键词集合
+
+        Returns:
+            Dict[str, Set[str]]: 更新后的URL关键词映射
+        """
+        updated_map = {}
+
+        for url, keywords in url_keywords_map.items():
+            # 只保留新关键词
+            url_new_keywords = keywords.intersection(new_keywords)
+            if url_new_keywords:
+                updated_map[url] = url_new_keywords
+
+        return updated_map
+    
+    async def _query_keywords(self, keywords: List[str],
+                                     url_keywords_map: Dict[str, Set[str]] = None) -> Dict[str, Dict]:
+        """
+        查询所有关键词数据 - 流式处理版本
+
         Args:
             keywords: 关键词列表
-            
+            url_keywords_map: URL到关键词的映射关系
+
         Returns:
             Dict[str, Dict]: 关键词数据映射
         """
         if not keywords:
             return {}
-        
-        with TimingLogger(self.logger, f"查询 {len(keywords)} 个关键词"):
-            return await self.seo_api.query_keywords_serial(keywords)
+
+        # 创建流式存储和提交回调
+        async def storage_callback(keyword_data_list):
+            """流式存储回调 - 简化日志"""
+            try:
+                from datetime import datetime
+
+                self.logger.debug(f"💾 本地存储: 保存 {len(keyword_data_list)} 条数据")
+
+                saved_count = 0
+                for data in keyword_data_list:
+                    keyword = data['keyword']
+                    seo_data = data['seo_data']
+
+                    # 保存已处理的关键词（仅保存加密标识）
+                    success = await self.storage.save_processed_keyword(keyword)
+                    if success:
+                        saved_count += 1
+                    else:
+                        self.logger.debug(f"关键词 {keyword} 存储失败")
+
+                self.logger.debug(f"💾 本地存储完成: 成功保存 {saved_count}/{len(keyword_data_list)} 条数据")
+
+            except Exception as e:
+                self.logger.error(f"❌ 本地存储失败: {e}")
+
+        async def submission_callback(keyword_data_list):
+            """流式提交回调 - 详细后端API日志"""
+            try:
+                from datetime import datetime
+
+                # 后端提交日志（仅调试模式）
+                self.logger.debug(f"🚀 后端API提交: {len(keyword_data_list)} 条数据")
+
+                # 准备提交数据 - 转换为正确的API格式，包含URL信息
+                keyword_data_dict = {}
+                for data in keyword_data_list:
+                    keyword_data_dict[data['keyword']] = data['seo_data']
+
+                # 使用正确的数据格式转换方法，传递URL映射信息
+                submit_data = self._prepare_legacy_submit_data(keyword_data_dict, url_keywords_map)
+
+                # 提交到后端
+                start_time = time.time()
+                if self.keyword_metrics_client:
+                    success = await self.keyword_metrics_client.submit_keyword_metrics_batch(submit_data)
+                    api_type = "新API (keyword-metrics)"
+                elif self.backend_api:
+                    success = await self.backend_api.submit_batch(submit_data)
+                    api_type = "后端API (work.seokey.vip)"
+                else:
+                    success = False
+                    api_type = "未配置"
+                    self.logger.warning("❌ 没有配置后端API客户端")
+
+                end_time = time.time()
+                duration = end_time - start_time
+
+                # 提交结果日志（仅调试模式）
+                if success:
+                    self.logger.debug(f"✅ 后端API提交成功: {len(keyword_data_list)} 条数据")
+                else:
+                    self.logger.error(f"❌ 后端API提交失败:")
+                    self.logger.error(f"   API类型: {api_type}")
+                    self.logger.error(f"   提交状态: 失败")
+                    self.logger.error(f"   数据量: {len(keyword_data_list)} 条")
+                    self.logger.error(f"   耗时: {duration:.2f} 秒")
+
+            except Exception as e:
+                self.logger.error(f"❌ 后端API提交异常: {e}")
+                import traceback
+                self.logger.debug(f"异常详情: {traceback.format_exc()}")
+
+        with TimingLogger(self.logger, f"流式查询 {len(keywords)} 个关键词"):
+            return await self.seo_api.query_keywords_streaming(
+                keywords,
+                url_keywords_map,
+                storage_callback=storage_callback,
+                submission_callback=submission_callback
+            )
 
     def _filter_successful_data(self, keyword_data: Dict[str, Dict],
                                url_keywords_map: Dict[str, Set[str]]) -> Dict[str, Any]:
@@ -370,31 +541,122 @@ class DataProcessor:
 
         return submit_data
 
-    def _prepare_legacy_submit_data(self, keyword_data: Dict[str, Dict]) -> List[Dict]:
+    def _prepare_legacy_submit_data(self, keyword_data: Dict[str, Dict],
+                                   url_keywords_map: Dict[str, Set[str]] = None) -> List[Dict]:
         """
-        准备旧API格式的提交数据（向后兼容）
+        准备符合API文档规范的提交数据 - 简化版本
 
         Args:
             keyword_data: 关键词数据
+            url_keywords_map: URL到关键词的映射关系
 
         Returns:
-            List[Dict]: 旧格式的提交数据列表
+            List[Dict]: 符合API文档格式的提交数据列表
         """
+        # 创建关键词到URL的反向映射
+        keyword_to_urls = {}
+        if url_keywords_map:
+            for url, keywords in url_keywords_map.items():
+                for keyword in keywords:
+                    if keyword not in keyword_to_urls:
+                        keyword_to_urls[keyword] = []
+                    keyword_to_urls[keyword].append(url)
+
         submit_data = []
 
         for keyword, data in keyword_data.items():
-            # 数据已经在_filter_successful_data中过滤过，这里直接使用
-            submit_data.append({
-                'keyword': keyword,
-                'avg_monthly_searches': data.get('avg_monthly_searches', 0),
-                'latest_searches': data.get('latest_searches', 0),
-                'competition': data.get('competition', 'UNKNOWN'),
-                'monthly_trend': data.get('monthly_searches', []),
-                'timestamp': datetime.now().isoformat()
-            })
+            # 只处理必要的字段转换
+            # 1. null值转换为0
+            low_bid = data.get('low_top_of_page_bid_micro', 0) or 0
+            high_bid = data.get('high_top_of_page_bid_micro', 0) or 0
+
+            # 2. 确保monthly_searches中的year和month为字符串
+            original_monthly_searches = data.get('monthly_searches', [])
+            self.logger.debug(f"🔍 处理关键词 {keyword} 的 monthly_searches:")
+            self.logger.debug(f"   原始数据类型: {type(original_monthly_searches)}")
+            self.logger.debug(f"   原始数据长度: {len(original_monthly_searches) if isinstance(original_monthly_searches, list) else 'N/A'}")
+            self.logger.debug(f"   原始数据内容: {original_monthly_searches}")
+
+            monthly_searches = []
+            for i, item in enumerate(original_monthly_searches):
+                self.logger.debug(f"   处理第 {i+1} 项: {item}")
+                if isinstance(item, dict):
+                    # 支持英文和中文字段名
+                    year_value = None
+                    month_value = None
+                    searches_value = None
+
+                    # 检查英文字段名（正常情况）
+                    if 'year' in item and 'month' in item and 'searches' in item:
+                        year_value = item['year']
+                        month_value = item['month']
+                        searches_value = item['searches']
+                        self.logger.debug(f"   ✅ 检测到英文字段名")
+                    # 检查中文字段名（异常情况，需要修复）
+                    elif '年' in item and '月' in item and 'searches' in item:
+                        year_value = item['年']
+                        month_value = item['月']
+                        searches_value = item['searches']
+                        # 静默修复中文字段名，不输出警告
+                        self.logger.debug(f"   🔧 自动修复中文字段名: 年={year_value}, 月={month_value}")
+
+                    if year_value is not None and month_value is not None and searches_value is not None:
+                        converted_item = {
+                            "year": str(year_value),
+                            "month": str(month_value),
+                            "searches": searches_value
+                        }
+                        monthly_searches.append(converted_item)
+                        self.logger.debug(f"   ✅ 转换成功: {converted_item}")
+                    else:
+                        self.logger.info(f"   ❌ 跳过无效项: 缺少必需字段")
+                else:
+                    self.logger.info(f"   ❌ 跳过无效项: 类型={type(item)}, 不是字典")
+
+            self.logger.debug(f"   最终 monthly_searches 长度: {len(monthly_searches)}")
+            self.logger.debug(f"   最终 monthly_searches 内容: {monthly_searches}")
+
+            # 获取该关键词对应的URL列表
+            urls = keyword_to_urls.get(keyword, [])
+
+            # 如果没有URL映射，使用默认URL
+            if not urls:
+                urls = [f"https://example.com/{keyword.replace(' ', '-')}"]
+
+            # 为每个URL创建一条提交记录
+            for url in urls:
+                submit_record = {
+                    "keyword": keyword,
+                    "url": url,  # 使用真实的URL
+                    "metrics": {
+                        "avg_monthly_searches": data.get('avg_monthly_searches', 0),
+                        "latest_searches": data.get('latest_searches', 0),
+                        "max_monthly_searches": data.get('max_monthly_searches', 0),
+                        "competition": data.get('competition', 'UNKNOWN'),
+                        "competition_index": data.get('competition_index', 0),
+                        "low_top_of_page_bid_micro": low_bid,
+                        "high_top_of_page_bid_micro": high_bid,
+                        "monthly_searches": monthly_searches,
+                        "data_quality": data.get('data_quality', {
+                            "status": "unknown",
+                            "complete": False,
+                            "has_missing_months": True,
+                            "only_last_month_has_data": False,
+                            "total_months": 0,
+                            "available_months": 0,
+                            "missing_months_count": 0,
+                            "missing_months": [],
+                            "warnings": ["no_data_quality_provided"]
+                        })
+                    }
+                }
+
+                submit_data.append(submit_record)
 
         return submit_data
-    
+
+
+
     async def _submit_to_backend(self, submit_data: List[Dict],
                                 url_keywords_map: Dict[str, Set[str]]) -> bool:
         """
@@ -421,10 +683,10 @@ class DataProcessor:
                     self.logger.error("关键词指标数据提交失败")
                 return success
             else:
-                # 使用旧的后端API客户端（向后兼容）
+                # 使用后端API客户端 (work.seokey.vip)
                 success = await self.backend_api.submit_batch(submit_data)
                 if success:
-                    self.logger.info(f"成功提交 {len(submit_data)} 条数据到旧API")
+                    self.logger.info(f"成功提交 {len(submit_data)} 条数据到后端API")
                 else:
                     self.logger.error("数据提交失败")
                 return success
@@ -489,16 +751,15 @@ class DataProcessor:
                         url_keywords_map[url] = set()
             return url_keywords_map
 
-        # 如果是列表，尝试转换（这可能是问题所在）
+        # 如果是列表，返回空字典而不是抛出异常
         if isinstance(url_keywords_map, list):
             self.logger.error(f"url_keywords_map是列表类型，无法转换为字典: {type(url_keywords_map)}")
             self.logger.error(f"列表内容预览: {url_keywords_map[:3] if len(url_keywords_map) > 0 else '空列表'}")
-            raise TypeError(f"url_keywords_map不能是列表类型，期望字典类型，实际: {type(url_keywords_map)}")
+            # 返回空字典而不是抛出异常，让程序继续运行
+            return {}
 
-        # 其他类型都无法处理
+        # 其他类型都无法处理，返回空字典
         self.logger.error(f"url_keywords_map类型不支持: {type(url_keywords_map)}")
-        raise TypeError(f"url_keywords_map类型不支持: {type(url_keywords_map)}")
-
         return {}
     
     async def health_check(self) -> Dict[str, bool]:
