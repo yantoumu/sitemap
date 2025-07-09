@@ -227,28 +227,45 @@ class DataProcessor:
             Dict[str, Any]: 统计信息
         """
         stats = data['statistics'].copy()
-        stats['current_urls'] = len(data['processed_urls'])
-        
-        # 计算关键词分布
-        keyword_counts = {}
-        total_seo_records = 0
-        
-        for record in data['processed_urls'].values():
-            for keyword in record.get('keywords', []):
-                keyword_counts[keyword] = keyword_counts.get(keyword, 0) + 1
-            
-            total_seo_records += len(record.get('seo_data', {}))
-        
-        stats['unique_keywords'] = len(keyword_counts)
-        stats['total_seo_records'] = total_seo_records
-        
-        # 最常见的关键词
-        if keyword_counts:
-            sorted_keywords = sorted(keyword_counts.items(), 
-                                   key=lambda x: x[1], reverse=True)
-            stats['top_keywords'] = sorted_keywords[:10]
-        else:
+        processed_urls = data['processed_urls']
+        stats['current_urls'] = len(processed_urls)
+
+        # 检查数据格式：新版本是列表，旧版本是字典
+        if isinstance(processed_urls, list):
+            # 新版本格式：processed_urls是加密URL列表，无法提取详细统计
+            stats['unique_keywords'] = 0
+            stats['total_seo_records'] = 0
             stats['top_keywords'] = []
+            stats['data_format'] = 'new_list_format'
+
+        elif isinstance(processed_urls, dict):
+            # 旧版本格式：processed_urls是字典，可以提取详细统计
+            keyword_counts = {}
+            total_seo_records = 0
+
+            for record in processed_urls.values():
+                for keyword in record.get('keywords', []):
+                    keyword_counts[keyword] = keyword_counts.get(keyword, 0) + 1
+
+                total_seo_records += len(record.get('seo_data', {}))
+
+            stats['unique_keywords'] = len(keyword_counts)
+            stats['total_seo_records'] = total_seo_records
+            stats['data_format'] = 'legacy_dict_format'
+
+            # 最常见的关键词
+            if keyword_counts:
+                sorted_keywords = sorted(keyword_counts.items(),
+                                       key=lambda x: x[1], reverse=True)
+                stats['top_keywords'] = sorted_keywords[:10]
+            else:
+                stats['top_keywords'] = []
+        else:
+            # 未知格式，提供基础统计
+            stats['unique_keywords'] = 0
+            stats['total_seo_records'] = 0
+            stats['top_keywords'] = []
+            stats['data_format'] = f'unknown_{type(processed_urls).__name__}'
         
         return stats
     
