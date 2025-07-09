@@ -222,16 +222,45 @@ class StorageManager:
                 return False
     
     async def _save_to_disk(self) -> None:
-        """异步保存到磁盘"""
+        """异步保存到磁盘 - 增强容错性"""
+        import tempfile
+        import shutil
+
         try:
             # 确保目录存在
             self.storage_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 异步写入文件
-            json_data = self.processor.format_json_data(self.data)
-            async with aiofiles.open(self.storage_file, 'w', encoding='utf-8') as f:
-                await f.write(json_data)
+            # 检查磁盘空间（简单检查）
+            try:
+                disk_usage = shutil.disk_usage(self.storage_file.parent)
+                if disk_usage.free < 100 * 1024 * 1024:  # 100MB
+                    self.logger.warning("磁盘空间不足，可能影响数据保存")
+            except Exception:
+                pass  # 忽略磁盘空间检查失败
 
+            # 使用临时文件确保原子性写入
+            json_data = self.processor.format_json_data(self.data)
+
+            # 创建临时文件
+            temp_file = self.storage_file.with_suffix('.tmp')
+
+            try:
+                # 写入临时文件
+                async with aiofiles.open(temp_file, 'w', encoding='utf-8') as f:
+                    await f.write(json_data)
+
+                # 原子性移动（在大多数文件系统上是原子的）
+                temp_file.replace(self.storage_file)
+
+            except Exception as e:
+                # 清理临时文件
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise e
+
+        except OSError as e:
+            self.logger.error(f"文件系统错误，保存失败: {e}")
+            raise
         except Exception as e:
             self.logger.error(f"保存到磁盘失败: {e}")
             raise

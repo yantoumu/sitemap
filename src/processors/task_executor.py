@@ -137,10 +137,11 @@ class SubmitTask(AsyncTask):
             return TaskResult(False, error="输入数据验证失败")
         
         try:
-            # 创建数据副本，避免竞争
-            keyword_data = copy.deepcopy(data['keyword_data'])
-            url_keywords_map = copy.deepcopy(data['url_keywords_map'])
-            
+            # 使用引用传递，避免大数据集的深拷贝导致内存问题
+            # 数据在此处是只读的，不需要深拷贝
+            keyword_data = data['keyword_data']
+            url_keywords_map = data['url_keywords_map']
+
             self.logger.info(f"提交任务开始: {len(keyword_data)} 个关键词")
             
             # 准备提交数据

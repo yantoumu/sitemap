@@ -807,19 +807,46 @@ class URLProcessor:
     
     def filter_processed_urls(self, urls: Set[str], storage: StorageManager) -> List[str]:
         """
-        过滤已处理的URL
-        
+        过滤已处理的URL - 增强错误处理
+
         Args:
             urls: URL集合
             storage: 存储管理器
-            
+
         Returns:
             List[str]: 新URL列表
         """
+        if not urls:
+            self.logger.warning("输入URL集合为空")
+            return []
+
+        if not isinstance(urls, (set, list, tuple)):
+            self.logger.error(f"URLs类型错误: {type(urls)}, 期望set/list/tuple")
+            return []
+
         new_urls = []
+        processed_count = 0
+        error_count = 0
+
         for url in urls:
-            if not storage.is_url_processed(url):
+            try:
+                if not isinstance(url, str):
+                    self.logger.warning(f"跳过非字符串URL: {type(url)} - {url}")
+                    error_count += 1
+                    continue
+
+                if not storage.is_url_processed(url):
+                    new_urls.append(url)
+                else:
+                    processed_count += 1
+
+            except Exception as e:
+                self.logger.error(f"检查URL处理状态失败 {url}: {e}")
+                error_count += 1
+                # 如果检查失败，保守地将URL加入新URL列表
                 new_urls.append(url)
+
+        self.logger.info(f"URL过滤完成: 新URL {len(new_urls)}, 已处理 {processed_count}, 错误 {error_count}")
         return new_urls
     
     def extract_all_keywords(self, urls: List[str]) -> Dict[str, Set[str]]:
@@ -835,14 +862,27 @@ class URLProcessor:
         import asyncio
         import concurrent.futures
         import os
-        from .utils import ProgressLogger
 
-        # 如果URL数量较少，使用原始顺序处理
-        if len(urls) < 1000:
-            return self._extract_keywords_sequential(urls)
+        try:
+            # 如果URL数量较少，使用原始顺序处理
+            if len(urls) < 1000:
+                result = self._extract_keywords_sequential(urls)
+            else:
+                # 并行处理大量URL（同步版本）
+                result = self._extract_keywords_parallel_sync(urls)
 
-        # 并行处理大量URL（同步版本）
-        return self._extract_keywords_parallel_sync(urls)
+            # 防御性检查：确保返回字典类型
+            if not isinstance(result, dict):
+                self.logger.error(f"❌ extract_all_keywords返回类型错误: {type(result)}, 期望dict类型")
+                return {}
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ extract_all_keywords执行失败: {e}")
+            import traceback
+            self.logger.error(f"❌ 完整堆栈: {traceback.format_exc()}")
+            return {}
 
     def _extract_keywords_sequential(self, urls: List[str]) -> Dict[str, Set[str]]:
         """
@@ -854,8 +894,6 @@ class URLProcessor:
         Returns:
             Dict[str, Set[str]]: URL到关键词集合的映射
         """
-        from .utils import ProgressLogger
-
         url_keywords_map = {}
         log_interval = max(100, len(urls) // 10)
         progress = ProgressLogger(self.logger, len(urls), log_interval)
@@ -881,45 +919,50 @@ class URLProcessor:
         Returns:
             Dict[str, Set[str]]: URL到关键词集合的映射
         """
-        from .utils import ProgressLogger
         import concurrent.futures
         import os
 
-        # 确定并行度：CPU核心数的2倍，但不超过8
-        max_workers = min(8, (os.cpu_count() or 4) * 2)
+        # 确定并行度：CPU核心数的2倍，但不超过6（降低资源消耗）
+        max_workers = min(6, (os.cpu_count() or 4) * 2)
 
-        # 计算批次大小：确保每个批次有足够的工作量
-        batch_size = max(500, len(urls) // (max_workers * 4))
+        # 计算批次大小：确保每个批次有足够的工作量，但不会过大
+        batch_size = max(200, min(1000, len(urls) // (max_workers * 2)))
 
         self.logger.info(f"并行关键词提取: {len(urls)} 个URL, {max_workers} 个工作线程, 批次大小 {batch_size}")
 
-        # 分批处理
+        # 分批处理，限制内存使用
         batches = [urls[i:i + batch_size] for i in range(0, len(urls), batch_size)]
 
         # 进度跟踪
-        log_interval = max(1000, len(urls) // 20)
+        log_interval = max(500, len(urls) // 20)
         progress = ProgressLogger(self.logger, len(urls), log_interval)
 
         # 并行处理批次
         url_keywords_map = {}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 提交所有批次任务
-            future_to_batch = {
-                executor.submit(self._process_url_batch, batch, progress): batch
-                for batch in batches
-            }
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有批次任务
+                future_to_batch = {
+                    executor.submit(self._process_url_batch, batch, progress): batch
+                    for batch in batches
+                }
 
-            # 收集结果
-            for future in concurrent.futures.as_completed(future_to_batch):
-                try:
-                    batch_result = future.result()
-                    url_keywords_map.update(batch_result)
-                except Exception as e:
-                    batch = future_to_batch[future]
-                    self.logger.error(f"批次处理失败 ({len(batch)} URLs): {e}")
+                # 收集结果
+                for future in concurrent.futures.as_completed(future_to_batch):
+                    try:
+                        batch_result = future.result()
+                        url_keywords_map.update(batch_result)
+                    except Exception as e:
+                        batch = future_to_batch[future]
+                        self.logger.error(f"批次处理失败 ({len(batch)} URLs): {e}")
 
-        progress.finish()
+        except Exception as e:
+            self.logger.error(f"并行处理异常: {e}")
+            # 即使出现异常，也要完成进度记录
+        finally:
+            progress.finish()
+
         self.logger.info(f"并行提取完成: 从 {len(urls)} 个URL中提取到 {len(url_keywords_map)} 个有效URL的关键词")
         return url_keywords_map
 
@@ -933,7 +976,6 @@ class URLProcessor:
         Returns:
             Dict[str, Set[str]]: URL到关键词集合的映射
         """
-        from .utils import ProgressLogger
         import concurrent.futures
         import os
 

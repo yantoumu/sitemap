@@ -107,30 +107,55 @@ class BackendAPIClient:
         # 准备请求头
         headers = self._prepare_headers()
         
-        # 分批处理
+        # 分批处理 - 增强容错性
         all_success = True
+        consecutive_failures = 0
+        max_consecutive_failures = 3  # 连续失败阈值
+
         for i in range(0, len(data), self.batch_size):
             batch = data[i:i + self.batch_size]
-            
+            batch_num = i//self.batch_size + 1
+
             try:
                 success = await self._submit_single_batch(batch, headers)
                 if success:
                     self.stats['successful_submissions'] += 1
                     self.stats['successful_records'] += len(batch)
-                    self.logger.debug(f"批次 {i//self.batch_size + 1} 提交成功 ({len(batch)} 条)")
+                    consecutive_failures = 0  # 重置连续失败计数
+                    self.logger.debug(f"批次 {batch_num} 提交成功 ({len(batch)} 条)")
                 else:
                     self.stats['failed_submissions'] += 1
                     all_success = False
-                    self.logger.error(f"批次 {i//self.batch_size + 1} 提交失败")
-                    
+                    consecutive_failures += 1
+                    self.logger.error(f"批次 {batch_num} 提交失败")
+
             except Exception as e:
                 self.stats['failed_submissions'] += 1
                 all_success = False
-                self.logger.error(f"批次 {i//self.batch_size + 1} 提交异常: {e}")
-            
+                consecutive_failures += 1
+                self.logger.error(f"批次 {batch_num} 提交异常: {e}")
+
+            # 检查连续失败情况，实施降级策略
+            if consecutive_failures >= max_consecutive_failures:
+                remaining_batches = (len(data) - i - self.batch_size) // self.batch_size
+                if remaining_batches > 0:
+                    self.logger.warning(f"连续 {consecutive_failures} 次失败，跳过剩余批次以避免资源浪费")
+                    # 更新统计信息（估算剩余数据）
+                    remaining_records = len(data) - i - self.batch_size
+                    if remaining_records > 0:
+                        self.stats['failed_submissions'] += remaining_batches
+                        self.stats['total_submissions'] += remaining_batches
+                        self.stats['total_records'] += remaining_records
+                    all_success = False
+                    break
+
             # 更新总统计
             self.stats['total_submissions'] += 1
             self.stats['total_records'] += len(batch)
+
+            # 批次间短暂延迟，避免过载
+            if i + self.batch_size < len(data):
+                await asyncio.sleep(0.1)
         
         success_rate = (self.stats['successful_records'] / max(self.stats['total_records'], 1)) * 100
         self.logger.debug(f"批量提交完成，成功率: {success_rate:.1f}%")
