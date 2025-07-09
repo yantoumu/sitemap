@@ -16,11 +16,11 @@ from ..utils.log_security import LogSecurity
 class SEOAPIManager:
     """SEO API串行管理器"""
     
-    def __init__(self, api_urls: List[str], interval: float = 1.0, 
+    def __init__(self, api_urls: List[str], interval: float = 1.0,
                  batch_size: int = 5, timeout: int = 30):
         """
-        初始化SEO API管理器
-        
+        初始化SEO API管理器 - 增强端点管理
+
         Args:
             api_urls: API端点URL列表
             interval: 请求间隔（秒）
@@ -32,29 +32,90 @@ class SEOAPIManager:
         self.batch_size = batch_size
         self.timeout = timeout
 
-        # 随机选择一个端点并坚持使用，不切换
-        import random
-        self.current_api_index = random.randint(0, len(api_urls) - 1)
-        self.fixed_endpoint = True  # 标记使用固定端点
+        # 端点健康状态跟踪
+        self.endpoint_health = {i: {'healthy': True, 'failures': 0, 'last_check': 0}
+                               for i in range(len(api_urls))}
+        self.max_failures = 3  # 连续失败阈值
+        self.health_check_interval = 300  # 5分钟重新检查不健康端点
+
+        # 智能端点选择：优先使用k3.seokey.vip
+        self.current_api_index = self._select_best_endpoint()
+        self.enable_failover = True  # 启用故障转移
 
         self.request_lock = asyncio.Lock()
         self.last_request_time = 0
         self.logger = logging.getLogger(__name__)
 
-        # 记录使用的固定端点
-        self.logger.debug(f"🎯 使用固定端点: {self.api_urls[self.current_api_index]} (索引: {self.current_api_index})")
-        
+        # 记录使用的端点
+        self.logger.info(f"🎯 选择端点: {self.api_urls[self.current_api_index]} (索引: {self.current_api_index})")
+
         # 统计信息
         self.stats = {
             'total_requests': 0,
             'successful_requests': 0,
             'failed_requests': 0,
             'api_switches': 0,
-            'total_keywords_queried': 0
+            'total_keywords_queried': 0,
+            'endpoint_failures': {i: 0 for i in range(len(api_urls))}
         }
-        
-        self.logger.info(f"SEO API管理器初始化完成，API端点: {len(api_urls)}个")
-    
+
+        self.logger.info(f"SEO API管理器初始化完成，API端点: {len(api_urls)}个，故障转移: 启用")
+
+    def _select_best_endpoint(self) -> int:
+        """智能选择最佳端点"""
+        # 优先选择k3.seokey.vip（已知稳定）
+        for i, url in enumerate(self.api_urls):
+            if 'k3.seokey.vip' in url and self.endpoint_health[i]['healthy']:
+                return i
+
+        # 如果k3不可用，选择其他健康端点
+        for i, health in self.endpoint_health.items():
+            if health['healthy']:
+                return i
+
+        # 如果都不健康，选择失败次数最少的
+        return min(self.endpoint_health.keys(),
+                  key=lambda x: self.endpoint_health[x]['failures'])
+
+    def _mark_endpoint_failure(self, endpoint_index: int):
+        """标记端点失败"""
+        import time
+        health = self.endpoint_health[endpoint_index]
+        health['failures'] += 1
+        self.stats['endpoint_failures'][endpoint_index] += 1
+
+        if health['failures'] >= self.max_failures:
+            health['healthy'] = False
+            health['last_check'] = time.time()
+            self.logger.warning(f"端点 {self.api_urls[endpoint_index]} 标记为不健康 (连续失败 {health['failures']} 次)")
+
+    def _try_failover(self) -> bool:
+        """尝试故障转移到其他端点"""
+        if not self.enable_failover:
+            return False
+
+        # 检查是否有其他健康端点
+        import time
+        current_time = time.time()
+        for i, health in self.endpoint_health.items():
+            if i == self.current_api_index:
+                continue
+
+            # 重新检查之前不健康的端点
+            if not health['healthy'] and (current_time - health['last_check']) > self.health_check_interval:
+                health['healthy'] = True
+                health['failures'] = 0
+                self.logger.info(f"重新启用端点 {self.api_urls[i]} (健康检查间隔已过)")
+
+            if health['healthy']:
+                old_endpoint = self.api_urls[self.current_api_index]
+                self.current_api_index = i
+                self.stats['api_switches'] += 1
+                self.logger.warning(f"🔄 故障转移: {old_endpoint} → {self.api_urls[i]}")
+                return True
+
+        return False
+
     async def query_keywords_serial(self, keywords: List[str]) -> Dict[str, Dict]:
         """
         串行查询关键词，确保请求间隔
@@ -168,11 +229,40 @@ class SEOAPIManager:
                     self.logger.debug(f"⏱️ 等待 {wait_time:.2f} 秒")
                     await asyncio.sleep(wait_time)
 
-                # 尝试当前API
-                try:
-                    self.logger.debug(f"查询批次 {i//self.batch_size + 1}: {len(batch)} 个关键词")
-                    batch_results = await self._send_request(batch)
-                    self.logger.debug(f"批次查询完成: 收到 {len(batch_results)} 个结果")
+                # 尝试当前API，支持故障转移
+                batch_results = None
+                max_retries = len(self.api_urls)  # 最多尝试所有端点
+
+                for retry in range(max_retries):
+                    try:
+                        current_endpoint = self.api_urls[self.current_api_index]
+                        self.logger.debug(f"查询批次 {i//self.batch_size + 1}: {len(batch)} 个关键词 (端点: {current_endpoint})")
+
+                        batch_results = await self._send_request(batch)
+                        self.logger.debug(f"批次查询完成: 收到 {len(batch_results)} 个结果")
+
+                        # 成功时重置失败计数
+                        self.endpoint_health[self.current_api_index]['failures'] = 0
+                        break
+
+                    except Exception as e:
+                        self.logger.error(f"API {retry + 1} 请求失败: {e}")
+
+                        # 标记当前端点失败
+                        self._mark_endpoint_failure(self.current_api_index)
+
+                        # 尝试故障转移
+                        if retry < max_retries - 1:  # 不是最后一次尝试
+                            if self._try_failover():
+                                self.logger.info(f"故障转移成功，重试批次 {i//self.batch_size + 1}")
+                                continue
+                            else:
+                                self.logger.error("无可用的健康端点，停止重试")
+                                break
+                        else:
+                            self.logger.error(f"所有端点都已尝试，批次 {i//self.batch_size + 1} 失败")
+
+                if batch_results is not None:
                     results.update(batch_results)
                     self.last_request_time = time.time()
 
@@ -222,12 +312,12 @@ class SEOAPIManager:
                     # 更新统计
                     self.stats['successful_requests'] += 1
                     self.stats['total_keywords_queried'] += len(batch)
-
-                except Exception as e:
-                    self.logger.error(f"API {self.current_api_index} 请求失败: {e}")
+                else:
+                    # 如果所有端点都失败，为这个批次创建空结果
+                    for keyword in batch:
+                        results[keyword] = None
+                    self.logger.error(f"批次 {i//self.batch_size + 1} 完全失败，所有关键词标记为失败")
                     self.stats['failed_requests'] += 1
-
-                    # 不切换端点，直接跳过失败的批次
 
                 self.stats['total_requests'] += 1
 
