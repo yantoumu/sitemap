@@ -33,21 +33,23 @@ class SEOAPIManager:
         self.timeout = timeout
 
         # 端点健康状态跟踪
-        self.endpoint_health = {i: {'healthy': True, 'failures': 0, 'last_check': 0}
+        self.endpoint_health = {i: {'healthy': True, 'failures': 0, 'last_check': 0, 'requests': 0}
                                for i in range(len(api_urls))}
         self.max_failures = 3  # 连续失败阈值
         self.health_check_interval = 300  # 5分钟重新检查不健康端点
 
-        # 智能端点选择：优先使用k3.seokey.vip
-        self.current_api_index = self._select_best_endpoint()
-        self.enable_failover = True  # 启用故障转移
+        # 负载均衡：轮询分配
+        self.current_endpoint_index = 0  # 轮询起始点
+        self.enable_load_balancing = True  # 启用负载均衡
 
-        self.request_lock = asyncio.Lock()
-        self.last_request_time = 0
+        # 每个端点独立的请求锁和时间跟踪
+        self.endpoint_locks = {i: asyncio.Lock() for i in range(len(api_urls))}
+        self.endpoint_last_request = {i: 0 for i in range(len(api_urls))}
+
         self.logger = logging.getLogger(__name__)
 
-        # 记录使用的端点
-        self.logger.info(f"🎯 选择端点: {self.api_urls[self.current_api_index]} (索引: {self.current_api_index})")
+        # 记录负载均衡配置
+        self.logger.info(f"🎯 负载均衡模式: 轮询分配到 {len(api_urls)} 个端点")
 
         # 统计信息
         self.stats = {
@@ -61,19 +63,26 @@ class SEOAPIManager:
 
         self.logger.info(f"SEO API管理器初始化完成，API端点: {len(api_urls)}个，故障转移: 启用")
 
-    def _select_best_endpoint(self) -> int:
-        """智能选择最佳端点"""
-        # 优先选择k3.seokey.vip（已知稳定）
-        for i, url in enumerate(self.api_urls):
-            if 'k3.seokey.vip' in url and self.endpoint_health[i]['healthy']:
-                return i
+    def _get_next_endpoint(self) -> int:
+        """轮询获取下一个可用端点"""
+        if not self.enable_load_balancing:
+            return 0
 
-        # 如果k3不可用，选择其他健康端点
-        for i, health in self.endpoint_health.items():
-            if health['healthy']:
-                return i
+        # 尝试找到下一个健康的端点
+        attempts = 0
+        while attempts < len(self.api_urls):
+            endpoint_index = self.current_endpoint_index
 
-        # 如果都不健康，选择失败次数最少的
+            # 移动到下一个端点（轮询）
+            self.current_endpoint_index = (self.current_endpoint_index + 1) % len(self.api_urls)
+
+            # 检查端点是否健康
+            if self.endpoint_health[endpoint_index]['healthy']:
+                return endpoint_index
+
+            attempts += 1
+
+        # 如果所有端点都不健康，返回失败次数最少的
         return min(self.endpoint_health.keys(),
                   key=lambda x: self.endpoint_health[x]['failures'])
 
@@ -116,67 +125,134 @@ class SEOAPIManager:
 
         return False
 
+    def _get_next_healthy_endpoint(self, exclude_index: int = None) -> int:
+        """获取下一个健康的端点，排除指定索引"""
+        for i, health in self.endpoint_health.items():
+            if i != exclude_index and health['healthy']:
+                return i
+        return None
+
+    async def _send_request_to_endpoint(self, keywords: List[str], endpoint_index: int) -> Dict[str, Dict]:
+        """向指定端点发送请求"""
+        if not keywords:
+            return {}
+
+        url = f"{self.api_urls[endpoint_index]}/api/keywords"
+        params = {"keyword": ",".join(keywords)}
+
+        # 完整的超时配置
+        timeout = aiohttp.ClientTimeout(
+            total=self.timeout,      # 总超时时间: 30秒
+            connect=10,              # 连接超时时间: 10秒
+            sock_read=15,            # 读取超时时间: 15秒
+            sock_connect=5           # socket连接超时: 5秒
+        )
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                # 简化日志
+                self.logger.debug(f"HTTP请求: {url}")
+                self.logger.debug(f"关键词: {list(keywords)}")
+
+                async with session.get(url, params=params) as response:
+                    self.logger.debug(f"HTTP响应: {response.status}")
+                    if response.status == 200:
+                        data = await response.json()
+                        # 添加原始响应调试
+                        self.logger.debug(f"🔍 API原始响应: {data}")
+                        result = self._parse_response(data, keywords)
+                        valid_count = len([r for r in result.values() if r])
+                        self.logger.debug(f"📊 解析结果: {valid_count}/{len(result)} 个有效数据")
+                        return result
+                    else:
+                        error_text = await response.text()
+                        self.logger.error(f"API错误响应: {response.status} - {error_text[:100]}{'...' if len(error_text) > 100 else ''}")
+                        raise Exception(f"API返回错误状态码: {response.status} - {error_text}")
+
+            except asyncio.TimeoutError:
+                raise Exception(f"请求超时 ({self.timeout}秒)")
+            except aiohttp.ClientError as e:
+                raise Exception(f"网络请求错误: {e}")
+
     async def query_keywords_serial(self, keywords: List[str]) -> Dict[str, Dict]:
         """
-        串行查询关键词，确保请求间隔
-        
+        负载均衡查询关键词，轮询分配到不同端点
+
         Args:
             keywords: 关键词列表
-            
+
         Returns:
             Dict[str, Dict]: 关键词到数据的映射
         """
         if not keywords:
             return {}
-        
-        async with self.request_lock:
-            # 减少冗余日志：只在大量关键词时显示INFO级别
-            if len(keywords) > 50:
-                self.logger.info(f"开始串行查询 {len(keywords)} 个关键词")
-            else:
-                self.logger.debug(f"开始串行查询 {len(keywords)} 个关键词")
-            
-            # 计算等待时间
-            current_time = time.time()
-            time_since_last = current_time - self.last_request_time
-            
-            if time_since_last < self.interval:
-                wait_time = self.interval - time_since_last
-                self.logger.info(f"等待 {wait_time:.2f} 秒以满足API限流要求")
-                await asyncio.sleep(wait_time)
-            
-            # 批量处理
-            results = {}
-            for i in range(0, len(keywords), self.batch_size):
-                batch = keywords[i:i + self.batch_size]
-                
-                # 尝试当前API
+
+        # 减少冗余日志：只在大量关键词时显示INFO级别
+        if len(keywords) > 50:
+            self.logger.info(f"开始负载均衡查询 {len(keywords)} 个关键词")
+        else:
+            self.logger.debug(f"开始负载均衡查询 {len(keywords)} 个关键词")
+
+        results = {}
+        batch_count = (len(keywords) + self.batch_size - 1) // self.batch_size
+        self.logger.info(f"🔄 负载均衡处理: {batch_count} 个批次轮询分配到 {len(self.api_urls)} 个端点")
+
+        for i in range(0, len(keywords), self.batch_size):
+            batch = keywords[i:i + self.batch_size]
+            batch_num = i // self.batch_size + 1
+
+            # 获取下一个端点（负载均衡）
+            endpoint_index = self._get_next_endpoint()
+            endpoint_url = self.api_urls[endpoint_index]
+
+            self.logger.debug(f"批次 {batch_num}: {len(batch)} 个关键词 → 端点 {endpoint_index} ({endpoint_url})")
+
+            # 使用该端点的独立锁
+            async with self.endpoint_locks[endpoint_index]:
+                # 计算该端点的等待时间
+                current_time = time.time()
+                time_since_last = current_time - self.endpoint_last_request[endpoint_index]
+
+                if time_since_last < self.interval:
+                    wait_time = self.interval - time_since_last
+                    self.logger.debug(f"⏱️ 端点 {endpoint_index} 等待 {wait_time:.2f} 秒")
+                    await asyncio.sleep(wait_time)
+
+                # 发送请求
                 try:
-                    batch_results = await self._send_request(batch)
+                    batch_results = await self._send_request_to_endpoint(batch, endpoint_index)
                     results.update(batch_results)
-                    self.last_request_time = time.time()
-                    
-                    # 更新统计
+
+                    # 更新该端点的统计
+                    self.endpoint_last_request[endpoint_index] = time.time()
+                    self.endpoint_health[endpoint_index]['requests'] += 1
+                    self.endpoint_health[endpoint_index]['failures'] = 0  # 重置失败计数
+
                     self.stats['successful_requests'] += 1
                     self.stats['total_keywords_queried'] += len(batch)
-                    
-                except Exception as e:
-                    self.logger.error(f"API {self.current_api_index} 请求失败: {e}")
-                    self.stats['failed_requests'] += 1
 
-                    # 不切换端点，直接记录失败的关键词
+                except Exception as e:
+                    self.logger.error(f"端点 {endpoint_index} 批次 {batch_num} 查询失败: {e}")
+
+                    # 标记端点失败
+                    self._mark_endpoint_failure(endpoint_index)
+
+                    # 为失败的关键词添加None结果
                     for keyword in batch:
                         results[keyword] = None
-                
-                # 更新总请求数
+                    self.stats['failed_requests'] += 1
+
                 self.stats['total_requests'] += 1
-                
-                # 批次间等待
-                if i + self.batch_size < len(keywords):
-                    await asyncio.sleep(self.interval)
-            
-            self.logger.info(f"串行查询完成，成功: {len([r for r in results.values() if r])}/{len(keywords)}")
-            return results
+
+        # 显示负载分布统计
+        total_requests = sum(health['requests'] for health in self.endpoint_health.values())
+        self.logger.info(f"负载均衡查询完成，成功: {len([r for r in results.values() if r])}/{len(keywords)}")
+        self.logger.debug(f"负载分布: " + ", ".join([
+            f"端点{i}({health['requests']}次)"
+            for i, health in self.endpoint_health.items()
+        ]))
+
+        return results
 
     async def query_keywords_streaming(self, keywords: List[str],
                                      url_keywords_map: Dict[str, Set[str]] = None,
@@ -205,62 +281,67 @@ class SEOAPIManager:
         results = {}
         processed_count = 0
 
-        # 修复初始化问题：设置正确的初始时间
-        if self.last_request_time == 0:
-            self.last_request_time = time.time() - self.interval
+        self.logger.info(f"🔄 开始负载均衡处理 {len(keywords)} 个关键词，分为 {(len(keywords) + self.batch_size - 1) // self.batch_size} 个批次")
 
-        async with self.request_lock:
-            self.logger.info(f"🔄 开始处理 {len(keywords)} 个关键词，分为 {(len(keywords) + self.batch_size - 1) // self.batch_size} 个批次")
+        for i in range(0, len(keywords), self.batch_size):
+            batch = keywords[i:i + self.batch_size]
+            batch_num = i // self.batch_size + 1
 
-            for i in range(0, len(keywords), self.batch_size):
-                batch = keywords[i:i + self.batch_size]
-                batch_num = i // self.batch_size + 1
+            # 获取下一个端点（负载均衡）
+            endpoint_index = self._get_next_endpoint()
+            endpoint_url = self.api_urls[endpoint_index]
 
-                # 批次处理日志（仅调试模式）
-                self.logger.debug(f"📋 处理批次 {batch_num}: {len(batch)} 个关键词")
+            # 批次处理日志
+            self.logger.debug(f"📋 批次 {batch_num}: {len(batch)} 个关键词 → 端点 {endpoint_index} ({endpoint_url})")
 
-                # 计算等待时间 - 添加保护机制
+            # 使用该端点的独立锁和时间跟踪
+            async with self.endpoint_locks[endpoint_index]:
+                # 计算该端点的等待时间
                 current_time = time.time()
-                time_since_last = current_time - self.last_request_time
+                time_since_last = current_time - self.endpoint_last_request[endpoint_index]
 
                 if time_since_last < self.interval:
-                    wait_time = min(self.interval - time_since_last, self.interval)  # 限制最大等待时间
-                    # 等待时间日志（仅调试模式）
-                    self.logger.debug(f"⏱️ 等待 {wait_time:.2f} 秒")
+                    wait_time = self.interval - time_since_last
+                    self.logger.debug(f"⏱️ 端点 {endpoint_index} 等待 {wait_time:.2f} 秒")
                     await asyncio.sleep(wait_time)
 
-                # 尝试当前API，支持故障转移
+                # 尝试查询，支持故障转移
                 batch_results = None
                 max_retries = len(self.api_urls)  # 最多尝试所有端点
+                current_endpoint_index = endpoint_index
 
                 for retry in range(max_retries):
                     try:
-                        current_endpoint = self.api_urls[self.current_api_index]
-                        self.logger.debug(f"查询批次 {i//self.batch_size + 1}: {len(batch)} 个关键词 (端点: {current_endpoint})")
+                        current_endpoint_url = self.api_urls[current_endpoint_index]
+                        self.logger.debug(f"查询批次 {batch_num}: {len(batch)} 个关键词 (端点: {current_endpoint_url})")
 
-                        batch_results = await self._send_request(batch)
+                        batch_results = await self._send_request_to_endpoint(batch, current_endpoint_index)
                         self.logger.debug(f"批次查询完成: 收到 {len(batch_results)} 个结果")
 
-                        # 成功时重置失败计数
-                        self.endpoint_health[self.current_api_index]['failures'] = 0
+                        # 成功时重置失败计数并更新统计
+                        self.endpoint_health[current_endpoint_index]['failures'] = 0
+                        self.endpoint_health[current_endpoint_index]['requests'] += 1
+                        self.endpoint_last_request[current_endpoint_index] = time.time()
                         break
 
                     except Exception as e:
-                        self.logger.error(f"API {retry + 1} 请求失败: {e}")
+                        self.logger.error(f"端点 {current_endpoint_index} 请求失败: {e}")
 
                         # 标记当前端点失败
-                        self._mark_endpoint_failure(self.current_api_index)
+                        self._mark_endpoint_failure(current_endpoint_index)
 
-                        # 尝试故障转移
-                        if retry < max_retries - 1:  # 不是最后一次尝试
-                            if self._try_failover():
-                                self.logger.info(f"故障转移成功，重试批次 {i//self.batch_size + 1}")
+                        # 尝试下一个健康端点
+                        if retry < max_retries - 1:
+                            next_endpoint = self._get_next_healthy_endpoint(current_endpoint_index)
+                            if next_endpoint is not None:
+                                current_endpoint_index = next_endpoint
+                                self.logger.info(f"故障转移: 批次 {batch_num} 切换到端点 {current_endpoint_index}")
                                 continue
                             else:
                                 self.logger.error("无可用的健康端点，停止重试")
                                 break
                         else:
-                            self.logger.error(f"所有端点都已尝试，批次 {i//self.batch_size + 1} 失败")
+                            self.logger.error(f"所有端点都已尝试，批次 {batch_num} 失败")
 
                 if batch_results is not None:
                     results.update(batch_results)
