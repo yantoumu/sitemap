@@ -130,9 +130,13 @@ Thumbs.db
 
 # 项目特定文件
 logs/
-data/
+data/processed_keywords.json
+data/e2e_test_report*.json
 temp/
 *.tmp
+
+# 允许提交的数据文件
+!data/processed_urls.json
 
 # 配置文件（包含敏感信息）
 config/sitemaps.txt
