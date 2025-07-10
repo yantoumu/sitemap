@@ -180,14 +180,8 @@ jobs:
             FILE_SIZE=$(du -h data/processed_urls.json | cut -f1)
 
             # 提交数据文件
-            git commit -m "data: 更新处理结果数据
-
-- 执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-- 运行ID: ${{ github.run_id }}
-- 数据文件大小: $FILE_SIZE
-- 包含加密的URL数据
-
-[skip ci]"
+            COMMIT_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            git commit -m "data: 更新处理结果数据 ($FILE_SIZE) - $COMMIT_TIME [skip ci]"
 
             # 推送到GitHub
             git push origin main
