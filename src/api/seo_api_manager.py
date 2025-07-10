@@ -1,6 +1,6 @@
 """
 SEO API管理器
-管理两个SEO API接口，确保严格串行请求，支持故障转移
+管理多个SEO API接口，确保严格串行请求，采用平均分配策略
 """
 
 import asyncio
@@ -61,7 +61,7 @@ class SEOAPIManager:
             'endpoint_failures': {i: 0 for i in range(len(api_urls))}
         }
 
-        self.logger.info(f"SEO API管理器初始化完成，API端点: {len(api_urls)}个，故障转移: 启用")
+        self.logger.info(f"SEO API管理器初始化完成，API端点: {len(api_urls)}个，负载均衡: 平均分配")
 
     def _get_next_endpoint(self) -> int:
         """轮询获取下一个可用端点"""
@@ -98,39 +98,7 @@ class SEOAPIManager:
             health['last_check'] = time.time()
             self.logger.warning(f"端点 {self.api_urls[endpoint_index]} 标记为不健康 (连续失败 {health['failures']} 次)")
 
-    def _try_failover(self) -> bool:
-        """尝试故障转移到其他端点"""
-        if not self.enable_failover:
-            return False
 
-        # 检查是否有其他健康端点
-        import time
-        current_time = time.time()
-        for i, health in self.endpoint_health.items():
-            if i == self.current_api_index:
-                continue
-
-            # 重新检查之前不健康的端点
-            if not health['healthy'] and (current_time - health['last_check']) > self.health_check_interval:
-                health['healthy'] = True
-                health['failures'] = 0
-                self.logger.info(f"重新启用端点 {self.api_urls[i]} (健康检查间隔已过)")
-
-            if health['healthy']:
-                old_endpoint = self.api_urls[self.current_api_index]
-                self.current_api_index = i
-                self.stats['api_switches'] += 1
-                self.logger.warning(f"🔄 故障转移: {old_endpoint} → {self.api_urls[i]}")
-                return True
-
-        return False
-
-    def _get_next_healthy_endpoint(self, exclude_index: int = None) -> int:
-        """获取下一个健康的端点，排除指定索引"""
-        for i, health in self.endpoint_health.items():
-            if i != exclude_index and health['healthy']:
-                return i
-        return None
 
     async def _send_request_to_endpoint(self, keywords: List[str], endpoint_index: int) -> Dict[str, Dict]:
         """向指定端点发送请求"""
@@ -165,9 +133,29 @@ class SEOAPIManager:
                         self.logger.debug(f"📊 解析结果: {valid_count}/{len(result)} 个有效数据")
                         return result
                     else:
-                        error_text = await response.text()
-                        self.logger.error(f"API错误响应: {response.status} - {error_text[:100]}{'...' if len(error_text) > 100 else ''}")
-                        raise Exception(f"API返回错误状态码: {response.status} - {error_text}")
+                        # 根据状态码提供简洁的错误信息
+                        if response.status >= 500:
+                            # 服务器错误：只显示状态码，不输出HTML内容
+                            error_msg = f"{response.status}错误 (服务器内部错误)"
+                            self.logger.error(f"API错误响应: {error_msg}")
+                            raise Exception(f"API返回错误状态码: {error_msg}")
+                        else:
+                            # 客户端错误：显示简短的错误信息
+                            try:
+                                error_text = await response.text()
+                                # 移除HTML标签，只保留纯文本
+                                import re
+                                clean_text = re.sub(r'<[^>]+>', '', error_text)
+                                # 清理多余的空白字符
+                                clean_text = ' '.join(clean_text.split())
+                                clean_text = clean_text[:100]
+                                if not clean_text:
+                                    clean_text = f"{response.status}错误"
+                            except:
+                                clean_text = f"{response.status}错误"
+
+                            self.logger.error(f"API错误响应: {response.status} - {clean_text}")
+                            raise Exception(f"API返回错误状态码: {response.status} - {clean_text}")
 
             except asyncio.TimeoutError:
                 raise Exception(f"请求超时 ({self.timeout}秒)")
@@ -305,43 +293,28 @@ class SEOAPIManager:
                     self.logger.debug(f"⏱️ 端点 {endpoint_index} 等待 {wait_time:.2f} 秒")
                     await asyncio.sleep(wait_time)
 
-                # 尝试查询，支持故障转移
+                # 发送请求到指定端点（平均分配，无故障转移）
                 batch_results = None
-                max_retries = len(self.api_urls)  # 最多尝试所有端点
-                current_endpoint_index = endpoint_index
+                try:
+                    current_endpoint_url = self.api_urls[endpoint_index]
+                    self.logger.debug(f"查询批次 {batch_num}: {len(batch)} 个关键词 (端点: {current_endpoint_url})")
 
-                for retry in range(max_retries):
-                    try:
-                        current_endpoint_url = self.api_urls[current_endpoint_index]
-                        self.logger.debug(f"查询批次 {batch_num}: {len(batch)} 个关键词 (端点: {current_endpoint_url})")
+                    batch_results = await self._send_request_to_endpoint(batch, endpoint_index)
+                    self.logger.debug(f"批次查询完成: 收到 {len(batch_results)} 个结果")
 
-                        batch_results = await self._send_request_to_endpoint(batch, current_endpoint_index)
-                        self.logger.debug(f"批次查询完成: 收到 {len(batch_results)} 个结果")
+                    # 成功时重置失败计数并更新统计
+                    self.endpoint_health[endpoint_index]['failures'] = 0
+                    self.endpoint_health[endpoint_index]['requests'] += 1
+                    self.endpoint_last_request[endpoint_index] = time.time()
 
-                        # 成功时重置失败计数并更新统计
-                        self.endpoint_health[current_endpoint_index]['failures'] = 0
-                        self.endpoint_health[current_endpoint_index]['requests'] += 1
-                        self.endpoint_last_request[current_endpoint_index] = time.time()
-                        break
+                except Exception as e:
+                    self.logger.error(f"端点 {endpoint_index} 批次 {batch_num} 查询失败: {e}")
 
-                    except Exception as e:
-                        self.logger.error(f"端点 {current_endpoint_index} 请求失败: {e}")
+                    # 标记端点失败
+                    self._mark_endpoint_failure(endpoint_index)
 
-                        # 标记当前端点失败
-                        self._mark_endpoint_failure(current_endpoint_index)
-
-                        # 尝试下一个健康端点
-                        if retry < max_retries - 1:
-                            next_endpoint = self._get_next_healthy_endpoint(current_endpoint_index)
-                            if next_endpoint is not None:
-                                current_endpoint_index = next_endpoint
-                                self.logger.info(f"故障转移: 批次 {batch_num} 切换到端点 {current_endpoint_index}")
-                                continue
-                            else:
-                                self.logger.error("无可用的健康端点，停止重试")
-                                break
-                        else:
-                            self.logger.error(f"所有端点都已尝试，批次 {batch_num} 失败")
+                    # 平均分配模式：不进行故障转移，直接失败
+                    batch_results = None
 
                 if batch_results is not None:
                     results.update(batch_results)
@@ -394,10 +367,10 @@ class SEOAPIManager:
                     self.stats['successful_requests'] += 1
                     self.stats['total_keywords_queried'] += len(batch)
                 else:
-                    # 如果所有端点都失败，为这个批次创建空结果
+                    # 端点失败，为这个批次创建空结果（平均分配模式：不重试）
                     for keyword in batch:
                         results[keyword] = None
-                    self.logger.error(f"批次 {i//self.batch_size + 1} 完全失败，所有关键词标记为失败")
+                    self.logger.error(f"批次 {batch_num} 失败，所有关键词标记为失败（平均分配模式：不重试其他端点）")
                     self.stats['failed_requests'] += 1
 
                 self.stats['total_requests'] += 1
@@ -414,58 +387,7 @@ class SEOAPIManager:
         self.logger.info(f"流式查询完成，处理 {processed_count} 条成功数据，总查询 {len(keywords)} 个关键词")
         return results
     
-    async def _send_request(self, keywords: List[str]) -> Dict[str, Dict]:
-        """
-        发送API请求
-        
-        Args:
-            keywords: 关键词列表
-            
-        Returns:
-            Dict[str, Dict]: 查询结果
-            
-        Raises:
-            Exception: 请求失败
-        """
-        if not keywords:
-            return {}
-        
-        url = f"{self.api_urls[self.current_api_index]}/api/keywords"
-        params = {"keyword": ",".join(keywords)}
-        
-        # 完整的超时配置
-        timeout = aiohttp.ClientTimeout(
-            total=self.timeout,      # 总超时时间: 30秒
-            connect=10,              # 连接超时时间: 10秒 (关键!)
-            sock_read=15,            # 读取超时时间: 15秒
-            sock_connect=5           # socket连接超时: 5秒
-        )
-        
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            try:
-                # 简化日志
-                self.logger.debug(f"HTTP请求: {url}")
-                self.logger.debug(f"关键词: {list(keywords)}")
 
-                async with session.get(url, params=params) as response:
-                    self.logger.debug(f"HTTP响应: {response.status}")
-                    if response.status == 200:
-                        data = await response.json()
-                        # 添加原始响应调试
-                        self.logger.debug(f"🔍 API原始响应: {data}")
-                        result = self._parse_response(data, keywords)
-                        valid_count = len([r for r in result.values() if r])
-                        self.logger.debug(f"📊 解析结果: {valid_count}/{len(result)} 个有效数据")
-                        return result
-                    else:
-                        error_text = await response.text()
-                        self.logger.error(f"API错误响应: {response.status} - {error_text[:100]}{'...' if len(error_text) > 100 else ''}")
-                        raise Exception(f"API返回错误状态码: {response.status} - {error_text}")
-                        
-            except asyncio.TimeoutError:
-                raise Exception(f"请求超时 ({self.timeout}秒)")
-            except aiohttp.ClientError as e:
-                raise Exception(f"网络请求错误: {e}")
     
     def _parse_response(self, data: Any, keywords: List[str]) -> Dict[str, Dict]:
         """
@@ -558,22 +480,14 @@ class SEOAPIManager:
         # 只要有任何数据就认为有效
         return len(data) > 0
     
-    def switch_api(self) -> None:
-        """切换到另一个API端点"""
-        old_index = self.current_api_index
-        self.current_api_index = (self.current_api_index + 1) % len(self.api_urls)
-        self.stats['api_switches'] += 1
-        
-        self.logger.info(f"切换API端点: {old_index} -> {self.current_api_index}")
-    
     def get_current_api_url(self) -> str:
         """
-        获取当前使用的API URL
-        
+        获取当前轮询的API URL（仅用于显示）
+
         Returns:
-            str: 当前API URL
+            str: 当前轮询位置的API URL
         """
-        return self.api_urls[self.current_api_index]
+        return self.api_urls[self.current_endpoint_index]
     
     def get_statistics(self) -> Dict[str, Any]:
         """
@@ -583,7 +497,7 @@ class SEOAPIManager:
             Dict[str, Any]: 统计信息
         """
         stats = self.stats.copy()
-        stats['current_api_index'] = self.current_api_index
+        stats['current_endpoint_index'] = self.current_endpoint_index
         stats['current_api_url'] = self.get_current_api_url()
         stats['success_rate'] = (
             self.stats['successful_requests'] / max(self.stats['total_requests'], 1) * 100

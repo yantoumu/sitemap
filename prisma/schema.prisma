@@ -1,0 +1,225 @@
+// Prisma Schema 文件
+// 用户表配置
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表模型
+model User {
+  // 基础字段
+  id        String   @id @default(cuid())
+  username  String   @unique @db.VarChar(50)
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  
+  // 用户信息
+  firstName String?  @db.VarChar(50)
+  lastName  String?  @db.VarChar(50)
+  avatar    String?  @db.VarChar(500)
+  phone     String?  @db.VarChar(20)
+  
+  // 状态和角色
+  status    UserStatus @default(ACTIVE)
+  role      UserRole   @default(USER)
+  
+  // 配置信息
+  apiConfig Json?     // 存储用户的API配置
+  settings  Json?     // 用户偏好设置
+  
+  // 统计信息
+  lastLoginAt    DateTime?
+  loginCount     Int       @default(0)
+  keywordCount   Int       @default(0)  // 处理的关键词数量
+  sitemapCount   Int       @default(0)  // 处理的网站地图数量
+  
+  // 时间戳
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // 软删除
+  deletedAt DateTime?
+  
+  // 关联关系
+  sessions UserSession[]
+  logs     UserLog[]
+  
+  // 索引
+  @@map("users")
+}
+
+// 用户状态枚举
+enum UserStatus {
+  ACTIVE    // 活跃
+  INACTIVE  // 非活跃
+  SUSPENDED // 暂停
+  BANNED    // 封禁
+  
+  @@map("user_status")
+}
+
+// 用户角色枚举
+enum UserRole {
+  ADMIN      // 管理员
+  USER       // 普通用户
+  PREMIUM    // 高级用户
+  DEVELOPER  // 开发者
+  
+  @@map("user_role")
+}
+
+// 用户会话表（可选）
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // 关联用户
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_sessions")
+}
+
+// 用户操作日志表（可选）
+model UserLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   @db.VarChar(100)
+  details   Json?
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  // 关联用户
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_logs")
+}
+
+// 学生表
+model Student {
+  // 基础字段
+  id          String   @id @default(cuid())
+  studentId   String   @unique @db.VarChar(20)  // 学号
+  name        String   @db.VarChar(100)         // 姓名
+  email       String?  @unique @db.VarChar(255) // 邮箱
+  phone       String?  @db.VarChar(20)          // 电话
+
+  // 学籍信息
+  grade       String   @db.VarChar(10)          // 年级
+  major       String   @db.VarChar(100)         // 专业
+  class       String   @db.VarChar(50)          // 班级
+  department  String   @db.VarChar(100)         // 院系
+
+  // 个人信息
+  gender      Gender?                           // 性别
+  birthDate   DateTime?                         // 出生日期
+  idCard      String?  @unique @db.VarChar(18)  // 身份证号
+  address     String?  @db.Text                 // 地址
+
+  // 状态信息
+  status      StudentStatus @default(ACTIVE)    // 学生状态
+  enrollDate  DateTime                          // 入学日期
+  graduateDate DateTime?                        // 毕业日期
+
+  // 成绩统计
+  gpa         Float?                            // 平均绩点
+  totalCredits Int      @default(0)             // 总学分
+
+  // 时间戳
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?                         // 软删除
+
+  // 关联关系
+  courses     StudentCourse[]                   // 学生课程关系
+
+  @@map("students")
+}
+
+// 性别枚举
+enum Gender {
+  MALE    // 男
+  FEMALE  // 女
+  OTHER   // 其他
+
+  @@map("gender")
+}
+
+// 学生状态枚举
+enum StudentStatus {
+  ACTIVE      // 在读
+  SUSPENDED   // 休学
+  GRADUATED   // 毕业
+  DROPPED     // 退学
+  TRANSFERRED // 转学
+
+  @@map("student_status")
+}
+
+// 课程表
+model Course {
+  id          String   @id @default(cuid())
+  courseCode  String   @unique @db.VarChar(20)  // 课程代码
+  courseName  String   @db.VarChar(200)         // 课程名称
+  credits     Int                               // 学分
+  hours       Int                               // 学时
+  department  String   @db.VarChar(100)         // 开课院系
+  teacher     String   @db.VarChar(100)         // 授课教师
+  semester    String   @db.VarChar(20)          // 学期
+
+  // 课程信息
+  description String?  @db.Text                 // 课程描述
+  prerequisite String? @db.VarChar(500)         // 先修课程
+
+  // 时间戳
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关联关系
+  students    StudentCourse[]                   // 学生课程关系
+
+  @@map("courses")
+}
+
+// 学生课程关系表（成绩表）
+model StudentCourse {
+  id        String   @id @default(cuid())
+  studentId String
+  courseId  String
+
+  // 成绩信息
+  score     Float?                             // 分数
+  grade     String?  @db.VarChar(5)            // 等级 (A/B/C/D/F)
+  status    CourseStatus @default(ENROLLED)    // 选课状态
+
+  // 时间信息
+  enrollDate DateTime @default(now())          // 选课时间
+  examDate   DateTime?                         // 考试时间
+
+  // 关联关系
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // 复合唯一索引
+  @@unique([studentId, courseId])
+  @@map("student_courses")
+}
+
+// 选课状态枚举
+enum CourseStatus {
+  ENROLLED    // 已选课
+  COMPLETED   // 已完成
+  FAILED      // 不及格
+  DROPPED     // 退课
+  RETAKING    // 重修
+
+  @@map("course_status")
+}
