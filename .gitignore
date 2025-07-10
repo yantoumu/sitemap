@@ -130,8 +130,7 @@ Thumbs.db
 
 # 项目特定文件
 logs/
-data/processed_urls.json
-data/e2e_test_report*.json
+data/
 temp/
 *.tmp
 
