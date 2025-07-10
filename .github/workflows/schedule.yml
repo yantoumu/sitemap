@@ -157,6 +157,47 @@ jobs:
         else
           echo "信息: 数据文件不存在（可能是首次运行或无新数据）"
         fi
+
+    - name: 提交处理结果到GitHub
+      if: ${{ github.event.inputs.health_check_only != 'true' && github.event.inputs.dry_run != 'true' }}
+      run: |
+        echo "检查是否有新数据需要提交..."
+
+        # 配置Git用户信息
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        # 检查是否有数据文件变更
+        if [ -f "data/processed_urls.json" ]; then
+          # 添加数据文件到Git
+          git add data/processed_urls.json
+
+          # 检查是否有变更需要提交
+          if git diff --staged --quiet; then
+            echo "📝 没有新数据需要提交"
+          else
+            # 获取文件统计信息
+            FILE_SIZE=$(du -h data/processed_urls.json | cut -f1)
+
+            # 提交数据文件
+            git commit -m "data: 更新处理结果数据
+
+- 执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+- 运行ID: ${{ github.run_id }}
+- 数据文件大小: $FILE_SIZE
+- 包含加密的URL数据
+
+[skip ci]"
+
+            # 推送到GitHub
+            git push origin main
+
+            echo "✅ 数据已成功提交到GitHub仓库"
+            echo "📊 数据文件大小: $FILE_SIZE"
+          fi
+        else
+          echo "📝 没有数据文件生成，跳过提交"
+        fi
         
     - name: 生成执行报告
       if: always()
@@ -176,7 +217,7 @@ jobs:
         - **日志级别**: $LOG_LEVEL
         - **试运行模式**: ${{ github.event.inputs.dry_run || 'false' }}
         - **仅健康检查**: ${{ github.event.inputs.health_check_only || 'false' }}
-        
+
         ## 文件状态
         EOF
         
@@ -192,13 +233,24 @@ jobs:
         else
           echo "- **数据文件**: 不存在" >> $REPORT_FILE
         fi
-        
+
+        # 添加数据提交状态
+        echo "" >> $REPORT_FILE
+        echo "## 数据持久化" >> $REPORT_FILE
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          echo "- **数据提交**: 跳过（试运行模式）" >> $REPORT_FILE
+        elif [ "${{ github.event.inputs.health_check_only }}" = "true" ]; then
+          echo "- **数据提交**: 跳过（仅健康检查）" >> $REPORT_FILE
+        else
+          echo "- **数据提交**: 已执行（加密URL数据已保存到GitHub仓库）" >> $REPORT_FILE
+        fi
+
         echo "执行报告已生成: $REPORT_FILE"
-        
-    # 注意: 不上传日志和数据文件，因为它们包含敏感信息
-    # 日志文件包含API URL和调试信息
-    # 数据文件包含加密的URL数据
-    # 如需调试，请使用本地环境或安全的私有存储
+
+    # 注意:
+    # - 数据文件(data/processed_urls.json)已通过Git提交到仓库（包含加密URL）
+    # - 日志文件不上传，因为包含敏感的API信息
+    # - 如需调试，请检查GitHub仓库中的数据文件或使用本地环境
         
     - name: 上传执行报告
       if: always()
