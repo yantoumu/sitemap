@@ -88,7 +88,6 @@ def parse_arguments() -> argparse.Namespace:
 def load_sitemap_urls(sitemaps_file: str = None) -> List[str]:
     """
     从环境变量或文件加载sitemap URL列表
-
     Args:
         sitemaps_file: sitemap列表文件路径（可选，优先使用环境变量）
 
