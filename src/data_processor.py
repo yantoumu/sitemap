@@ -272,13 +272,23 @@ class DataProcessor:
                 import traceback
                 self.logger.debug(f"异常详情: {traceback.format_exc()}")
 
-        with TimingLogger(self.logger, f"流式查询 {len(keywords)} 个关键词"):
-            return await self.seo_api.query_keywords_streaming(
-                keywords,
-                url_keywords_map,
-                storage_callback=storage_callback,
-                submission_callback=submission_callback
-            )
+        with TimingLogger(self.logger, f"弹性查询 {len(keywords)} 个关键词"):
+            # 检查是否是增强版API管理器
+            if hasattr(self.seo_api, 'query_keywords_with_resilience'):
+                self.logger.info("🚀 使用增强版弹性查询")
+                return await self.seo_api.query_keywords_with_resilience(
+                    keywords,
+                    storage_callback=storage_callback,
+                    submission_callback=submission_callback
+                )
+            else:
+                self.logger.info("📡 使用标准流式查询")
+                return await self.seo_api.query_keywords_streaming(
+                    keywords,
+                    url_keywords_map,
+                    storage_callback=storage_callback,
+                    submission_callback=submission_callback
+                )
 
     def _filter_successful_data(self, keyword_data: Dict[str, Dict],
                                url_keywords_map: Dict[str, Set[str]]) -> Dict[str, Any]:

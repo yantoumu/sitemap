@@ -1,16 +1,19 @@
 """
 SEO API管理器
 管理多个SEO API接口，确保严格串行请求，采用平均分配策略
+支持增量保存和容错处理
 """
 
 import asyncio
 import aiohttp
 import time
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Callable
 from datetime import datetime
 import logging
 
 from ..utils.log_security import LogSecurity
+from ..utils.incremental_saver import IncrementalSaver
+from ..utils.fault_tolerant_processor import FaultTolerantProcessor, BatchResult
 
 
 class SEOAPIManager:

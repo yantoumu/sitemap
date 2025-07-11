@@ -13,7 +13,7 @@ import logging
 from .config import ConfigLoader, AppConfig
 from .parsers import SitemapParser
 from .extractors import RuleEngine, KeywordExtractor
-from .api import SEOAPIManager, BackendAPIClient
+from .api import SEOAPIManager, BackendAPIClient, EnhancedSEOAPIManager
 from .storage import StorageManager
 from .data_processor import DataProcessor, URLProcessor
 from .utils import get_logger, ProgressLogger, TimingLogger
@@ -67,12 +67,17 @@ class SitemapKeywordAnalyzer:
         # 关键词提取器
         self.keyword_extractor = KeywordExtractor()
         
-        # SEO API管理器
-        self.seo_api = SEOAPIManager(
-            self.config.seo_api.urls,
-            self.config.seo_api.interval,
-            self.config.seo_api.batch_size,
-            self.config.seo_api.timeout
+        # SEO API管理器 - 使用增强版支持长时间运行
+        self.seo_api = EnhancedSEOAPIManager(
+            api_urls=self.config.seo_api.urls,
+            interval=self.config.seo_api.interval,
+            batch_size=self.config.seo_api.batch_size,
+            timeout=self.config.seo_api.timeout,
+            enable_incremental_save=True,  # 启用增量保存
+            enable_fault_tolerance=True,   # 启用容错处理
+            save_interval=1000,            # 每1000个关键词保存一次
+            git_commit_interval=5000,      # 每5000个关键词提交Git
+            max_runtime_hours=5.5          # 5.5小时超时限制
         )
         
         # 后端API客户端
