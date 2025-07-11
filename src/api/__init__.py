@@ -5,8 +5,10 @@ API客户端模块
 
 from .seo_api_manager import SEOAPIManager
 from .backend_api_client import BackendAPIClient
+from .enhanced_seo_api_manager import EnhancedSEOAPIManager
 
 __all__ = [
     'SEOAPIManager',
-    'BackendAPIClient'
+    'BackendAPIClient',
+    'EnhancedSEOAPIManager'
 ]
