@@ -35,6 +35,12 @@ env:
 jobs:
   sitemap-analysis:
     runs-on: ubuntu-latest
+
+    # 配置必要的权限以支持自动Git提交
+    permissions:
+      contents: write  # 允许推送代码到仓库
+      actions: read    # 允许读取Actions状态
+
     env:
       SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
       BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
@@ -46,6 +52,8 @@ jobs:
     steps:
     - name: Checkout代码
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub Token进行认证
       
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -163,9 +171,12 @@ jobs:
       run: |
         echo "检查是否有新数据需要提交..."
 
-        # 配置Git用户信息
+        # 配置Git用户信息和认证
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+
+        # 配置Git使用GITHUB_TOKEN进行认证
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
         # 检查是否有数据文件变更
         if [ -f "data/processed_urls.json" ]; then
