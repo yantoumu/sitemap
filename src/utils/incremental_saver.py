@@ -17,10 +17,10 @@ from ..utils.log_security import LogSecurity
 class IncrementalSaver:
     """增量数据保存管理器"""
     
-    def __init__(self, 
-                 save_interval: int = 1000,  # 每1000个关键词保存一次
-                 git_commit_interval: int = 5000,  # 每5000个关键词提交一次Git
-                 max_runtime_hours: float = 5.5,  # 最大运行时间（小时）
+    def __init__(self,
+                 save_interval: int = 500,   # 每500个关键词保存一次
+                 git_commit_interval: int = 2000,  # 每2000个关键词提交一次Git
+                 max_runtime_hours: float = 7.5,  # 最大运行时间（小时）
                  enable_git_commit: bool = False):  # 是否启用Git提交
         """
         初始化增量保存管理器
@@ -173,9 +173,14 @@ class IncrementalSaver:
             subprocess.run(['git', 'commit', '-m', commit_msg], 
                          check=True, capture_output=True)
             
-            # 推送到GitHub
-            subprocess.run(['git', 'push', 'origin', 'main'], 
-                         check=True, capture_output=True)
+            # 推送到GitHub（使用GitHub Actions权限）
+            if self.is_github_actions:
+                # 在GitHub Actions环境中，权限已通过workflow配置
+                subprocess.run(['git', 'push', 'origin', 'main'],
+                             check=True, capture_output=True)
+            else:
+                # 本地环境跳过推送
+                self.logger.info("本地环境，跳过Git推送")
             
             self.last_git_commit_count = processed_count
             
@@ -185,10 +190,14 @@ class IncrementalSaver:
             return True
             
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"❌ Git提交失败: {e}")
+            # 详细的Git错误信息
+            error_output = e.stderr.decode('utf-8') if e.stderr else str(e)
+            self.logger.error(f"❌ Git提交失败 (返回码: {e.returncode}): {error_output}")
             return False
         except Exception as e:
-            self.logger.error(f"❌ Git提交异常: {e}")
+            self.logger.error(f"❌ Git提交异常: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.debug(f"完整堆栈: {traceback.format_exc()}")
             return False
     
     async def emergency_save(self, 
