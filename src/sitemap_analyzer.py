@@ -75,9 +75,9 @@ class SitemapKeywordAnalyzer:
             timeout=self.config.seo_api.timeout,
             enable_incremental_save=True,  # 启用增量保存
             enable_fault_tolerance=True,   # 启用容错处理
-            save_interval=1000,            # 每1000个关键词保存一次
-            git_commit_interval=5000,      # 每5000个关键词提交Git
-            max_runtime_hours=5.5          # 5.5小时超时限制
+            save_interval=500,             # 每500个关键词保存一次（更频繁）
+            git_commit_interval=2000,      # 每2000个关键词提交Git（更频繁）
+            max_runtime_hours=7.5          # 7.5小时超时限制（更宽松）
         )
         
         # 后端API客户端

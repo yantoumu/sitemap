@@ -1,9 +1,14 @@
 name: Sitemap Keyword Analysis
 
+# 并发控制：防止多个任务同时运行
+concurrency:
+  group: sitemap-analysis
+  cancel-in-progress: false  # 不取消正在运行的任务
+
 on:
-  # 每4小时自动执行
+  # 每8小时自动执行（给任务足够时间完成）
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */8 * * *'
   
   # 支持手动触发
   workflow_dispatch:
@@ -49,6 +54,13 @@ jobs:
       LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
     
     steps:
+    - name: 检查并发状态
+      run: |
+        echo "🔍 检查当前任务状态"
+        echo "任务组: sitemap-analysis"
+        echo "取消进行中任务: false"
+        echo "开始时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
     - name: Checkout代码
       uses: actions/checkout@v4
       
@@ -278,3 +290,13 @@ jobs:
         echo "- 运行ID: ${{ github.run_id }}"
         echo "- 执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo "- 状态: ${{ job.status }}"
+        echo "- 并发组: sitemap-analysis"
+
+        # 检查取消原因
+        if [ "${{ job.status }}" = "cancelled" ]; then
+          echo "⚠️ 任务被取消，可能原因:"
+          echo "  - 新的定时任务启动"
+          echo "  - 手动取消操作"
+          echo "  - GitHub Actions资源限制"
+          echo "  - 运行时间超过限制"
+        fi
