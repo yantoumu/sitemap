@@ -48,7 +48,7 @@ class BackendAPIClient:
         
         # 使用安全日志记录，隐藏敏感URL
         safe_url = LogSecurity.sanitize_url(api_url)
-        self.logger.info(f"后端API客户端初始化完成: {safe_url}")
+        self.logger.debug(f"后端API客户端初始化完成: {safe_url}")
 
     def _sanitize_url(self, url: str) -> str:
         """

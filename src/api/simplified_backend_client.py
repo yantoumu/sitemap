@@ -40,7 +40,7 @@ class SimplifiedBackendClient:
         self.total_batches = 0
         self.failed_batches = 0
         
-        self.logger.info(f"初始化SimplifiedBackendClient: URL={self.api_url}, 批量大小={self.batch_size}")
+        self.logger.debug(f"初始化SimplifiedBackendClient: 批量大小={self.batch_size}")
     
     async def submit_url_keywords_mapping(self, url_keywords_map: Dict[str, Any]) -> bool:
         """
@@ -185,7 +185,7 @@ class SimplifiedBackendClient:
                             f"原始 {len(json_bytes)} 字节, "
                             f"压缩后 {len(compressed_data)} 字节 ({compression_ratio:.1f}%)")
             
-            # 发送请求
+            # 发送请求 - 标准HTTP gzip压缩
             headers = {
                 'Content-Type': 'application/json',
                 'Content-Encoding': 'gzip'
@@ -243,7 +243,7 @@ class SimplifiedBackendClient:
         """
         try:
             test_data = {"test.example.com": "测试关键词"}
-            self.logger.info(f"测试连接到 {self.api_url}")
+            self.logger.debug("开始连接测试")
             
             # 使用测试数据尝试提交
             result = await self.submit_url_keywords_mapping(test_data)

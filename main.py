@@ -28,7 +28,7 @@ def parse_arguments() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  python main.py --config config/config.yaml --rules config/url_rules.yaml
+  python main.py --config config/config.yaml --rules config/game_url_rules.yaml
   python main.py --sitemaps config/sitemaps.txt --log-level DEBUG
   python main.py --health-check
   python main.py --create-env
@@ -43,8 +43,8 @@ def parse_arguments() -> argparse.Namespace:
     
     parser.add_argument(
         '--rules', 
-        default='config/url_rules.yaml',
-        help='URL规则配置文件路径 (默认: config/url_rules.yaml)'
+        default='config/game_url_rules.yaml',
+        help='URL规则配置文件路径 (默认: config/game_url_rules.yaml)'
     )
     
     parser.add_argument(

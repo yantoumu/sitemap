@@ -46,7 +46,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段（通常是游戏名称）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/robots.*"
@@ -83,7 +83,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/robots.*"
@@ -109,7 +109,7 @@ rules:
       - type: "path_segment"
         position: -2  # 倒数第二个路径段（去掉末尾的/）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/robots.*"
@@ -136,7 +136,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段（游戏名称）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/tag/.*"      # 排除所有tag页面
       - ".*/category/.*" # 排除分类页面
@@ -168,7 +168,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段（游戏名称）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"   # 排除sitemap
       - ".*/robots.*"    # 排除robots
@@ -205,7 +205,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段（游戏名称）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"   # 排除sitemap
       - ".*/robots.*"    # 排除robots
@@ -242,7 +242,7 @@ rules:
       - type: "path_segment"
         position: -1  # 最后一个路径段（通常是游戏名称）
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/robots.*"
@@ -268,7 +268,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/robots.*"
@@ -292,7 +292,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -316,7 +316,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -338,7 +338,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -361,7 +361,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -385,7 +385,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -408,7 +408,7 @@ rules:
       - type: "path_segment"
         position: -1
         split_chars: "-_"
-        clean_regex: "[^a-zA-Z0-9]"
+        clean_regex: "[^a-zA-Z0-9 ]"
     exclude_patterns:
       - ".*/sitemap.*"
       - ".*/category.*"
@@ -420,4 +420,34 @@ rules:
       - "play"
       - "online"
       - "distribution"
+      - "www"
+  
+  # geometrydashworld.net - 几何冲刺世界
+  - domain: "geometrydashworld.net"
+    description: "geometrydashworld.net几何冲刺世界游戏规则"
+    patterns:
+      - "^/.*"
+    extract_rules:
+      - type: "path_segment"
+        position: -1
+        split_chars: "-_"
+        clean_regex: "[^a-zA-Z0-9 ]"
+    exclude_patterns:
+      - ".*/sitemap.*"
+      - ".*/robots.*"
+      - ".*/category.*"
+      - ".*/tag.*"
+      - ".*/page/.*"
+      - ".*/author/.*"
+      - ".*/search.*"
+      - ".*/feed.*"
+    stop_words:
+      - "game"
+      - "games"
+      - "geometry"
+      - "dash"
+      - "world"
+      - "play"
+      - "online"
+      - "net"
       - "www"

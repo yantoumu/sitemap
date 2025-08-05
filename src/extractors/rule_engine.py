@@ -27,7 +27,7 @@ class RuleEngine:
         self.default_rule = self._create_default_rule()
         self.logger = logging.getLogger(__name__)
 
-        self.logger.info(f"规则引擎初始化完成，加载 {len(rules)} 个特定域名规则，已创建通用默认规则")
+        self.logger.debug(f"规则引擎初始化完成，加载 {len(rules)} 个特定域名规则，已创建通用默认规则")
     
     def _compile_patterns(self) -> Dict[str, Dict[str, List[Pattern]]]:
         """

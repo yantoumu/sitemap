@@ -58,7 +58,7 @@ class SitemapKeywordAnalyzer:
         # 初始化组件
         self._initialize_components()
         
-        self.logger.info("网站地图关键词分析器初始化完成")
+        self.logger.debug("网站地图关键词分析器初始化完成")
     
     def _initialize_components(self) -> None:
         """初始化各个组件"""

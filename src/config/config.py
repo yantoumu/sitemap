@@ -60,7 +60,7 @@ class ConfigLoader:
             # 验证并创建配置对象
             app_config = AppConfig(**config_data)
             
-            self.logger.info(f"成功加载系统配置: {self.config_path}")
+            self.logger.debug(f"成功加载系统配置: {self.config_path}")
             return app_config
             
         except yaml.YAMLError as e:
@@ -98,7 +98,7 @@ class ConfigLoader:
                 rule = URLExtractionRule(**rule_data)
                 url_rules[rule.domain] = rule
             
-            self.logger.info(f"成功加载URL规则: {len(url_rules)}个域名规则")
+            self.logger.debug(f"成功加载URL规则: {len(url_rules)}个域名规则")
             return url_rules
             
         except yaml.YAMLError as e:
@@ -177,7 +177,7 @@ class ConfigLoader:
             # 验证URL规则
             self.load_url_rules()
             
-            self.logger.info("配置文件验证通过")
+            self.logger.debug("配置文件验证通过")
             return True
             
         except Exception as e:
@@ -192,11 +192,14 @@ class ConfigLoader:
             List[str]: 必需的环境变量名称列表
         """
         return [
-            'BACKEND_API_URL',
-            'ENCRYPTION_KEY',
-            # 可选的环境变量
-            # 'BACKEND_API_TOKEN',
-            # 'SEO_API_URLS',
+            'SITEMAP_API_URL',    # 简化后端API地址
+            'SITEMAP_SECRET_KEY', # 简化后端API密钥
+            'SITEMAP_URLS',       # 要监控的sitemap URL列表
+            'ENCRYPTION_KEY',     # 数据加密密钥
+            # 已废弃的环境变量 (不再检查):
+            # 'BACKEND_API_URL',    # 被 SITEMAP_API_URL 替代
+            # 'BACKEND_API_TOKEN',  # 被 SITEMAP_SECRET_KEY 替代
+            # 'SEO_API_URLS',       # SEO查询功能已移除
         ]
     
     def check_env_vars(self) -> Dict[str, bool]:
@@ -223,18 +226,27 @@ def create_default_config() -> Dict[str, Any]:
         Dict[str, Any]: 默认配置
     """
     return {
-        'seo_api': {
-            'urls': '${SEO_API_URLS}',  # 从环境变量读取
-            'interval': 1.0,
-            'batch_size': 5,
-            'timeout': 30
-        },
-        'backend_api': {
-            'url': '${BACKEND_API_URL}',
-            'auth_token': '${BACKEND_API_TOKEN}',
+        # 简化后端API配置 (新)
+        'simplified_backend': {
+            'url': '${SITEMAP_API_URL}',
+            'secret_key': '${SITEMAP_SECRET_KEY}',
             'batch_size': 100,
             'timeout': 30
         },
+        
+        # 已废弃配置 (保留用于兼容性，但不使用)
+        # 'seo_api': {
+        #     'urls': '${SEO_API_URLS}',  # SEO查询功能已移除
+        #     'interval': 1.0,
+        #     'batch_size': 5,
+        #     'timeout': 30
+        # },
+        # 'backend_api': {
+        #     'url': '${BACKEND_API_URL}',    # 被simplified_backend.url替代
+        #     'auth_token': '${BACKEND_API_TOKEN}',  # 被simplified_backend.secret_key替代
+        #     'batch_size': 100,
+        #     'timeout': 30
+        # },
         'system': {
             'max_concurrent': 10,
             'retry_times': 3,

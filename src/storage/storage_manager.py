@@ -35,7 +35,7 @@ class StorageManager:
         self.logger = logging.getLogger(__name__)
         self.data = self._initialize_storage()
 
-        self.logger.info(f"存储管理器初始化完成: {storage_file}")
+        self.logger.debug(f"存储管理器初始化完成: {storage_file}")
     
     def _initialize_storage(self) -> Dict[str, Any]:
         """
