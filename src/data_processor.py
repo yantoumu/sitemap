@@ -859,6 +859,71 @@ class URLProcessor:
         self.logger.info(f"URL过滤完成: 新URL {len(new_urls)}, 已处理 {processed_count}, 错误 {error_count}")
         return new_urls
     
+    def filter_excluded_urls(self, urls: Set[str]) -> List[str]:
+        """
+        根据规则过滤被排除的URL
+        
+        Args:
+            urls: URL集合
+            
+        Returns:
+            List[str]: 过滤后的URL列表
+        """
+        if not urls:
+            return []
+            
+        filtered_urls = []
+        excluded_count = 0
+        
+        for url in urls:
+            try:
+                # 获取URL对应的规则
+                rule = self.rule_engine.get_rule_for_url(url)
+                
+                # 检查URL是否应该被排除
+                if self._should_exclude_url(url, rule):
+                    excluded_count += 1
+                    self.logger.debug(f"排除URL: {url}")
+                else:
+                    filtered_urls.append(url)
+                    
+            except Exception as e:
+                self.logger.error(f"检查URL排除规则失败 {url}: {e}")
+                # 如果检查失败，保守地保留URL
+                filtered_urls.append(url)
+        
+        self.logger.info(f"URL排除规则过滤: 输入 {len(urls)} 个, 排除 {excluded_count} 个, 保留 {len(filtered_urls)} 个")
+        return filtered_urls
+    
+    def _should_exclude_url(self, url: str, rule) -> bool:
+        """
+        检查URL是否应该被排除
+        
+        Args:
+            url: URL
+            rule: URL规则
+            
+        Returns:
+            bool: True表示应该排除
+        """
+        from urllib.parse import urlparse
+        import re
+        
+        try:
+            parsed_url = urlparse(url)
+            path = parsed_url.path
+            
+            # 检查排除模式
+            for pattern in rule.exclude_patterns:
+                if re.search(pattern, path):
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"检查URL排除模式失败 {url}: {e}")
+            return False
+    
     def extract_all_keywords(self, urls: List[str]) -> Dict[str, Set[str]]:
         """
         从所有URL提取关键词 - 并行优化版本

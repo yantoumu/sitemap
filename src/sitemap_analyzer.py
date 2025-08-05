@@ -14,6 +14,7 @@ from .config import ConfigLoader, AppConfig
 from .parsers import SitemapParser
 from .extractors import RuleEngine, KeywordExtractor
 from .api import SEOAPIManager, BackendAPIClient, EnhancedSEOAPIManager
+from .api.simplified_backend_client import SimplifiedBackendClient
 from .storage import StorageManager
 from .data_processor import DataProcessor, URLProcessor
 from .utils import get_logger, ProgressLogger, TimingLogger
@@ -67,18 +68,21 @@ class SitemapKeywordAnalyzer:
         # 关键词提取器
         self.keyword_extractor = KeywordExtractor()
         
-        # SEO API管理器 - 使用增强版支持长时间运行
-        self.seo_api = EnhancedSEOAPIManager(
-            api_urls=self.config.seo_api.urls,
-            interval=self.config.seo_api.interval,
-            batch_size=self.config.seo_api.batch_size,
-            timeout=self.config.seo_api.timeout,
-            enable_incremental_save=True,  # 启用增量保存
-            enable_fault_tolerance=True,   # 启用容错处理
-            save_interval=500,             # 每500个关键词保存一次（更频繁）
-            git_commit_interval=2000,      # 每2000个关键词提交Git（更频繁）
-            max_runtime_hours=7.5          # 7.5小时超时限制（更宽松）
-        )
+        # SEO API管理器 - 注释掉，不再使用
+        # self.seo_api = EnhancedSEOAPIManager(
+        #     api_urls=self.config.seo_api.urls,
+        #     interval=self.config.seo_api.interval,
+        #     batch_size=self.config.seo_api.batch_size,
+        #     timeout=self.config.seo_api.timeout,
+        #     enable_incremental_save=True,  # 启用增量保存
+        #     enable_fault_tolerance=True,   # 启用容错处理
+        #     save_interval=500,             # 每500个关键词保存一次（更频繁）
+        #     git_commit_interval=2000,      # 每2000个关键词提交Git（更频繁）
+        #     max_runtime_hours=7.5          # 7.5小时超时限制（更宽松）
+        # )
+        
+        # 使用简化的后端客户端
+        self.simplified_backend = SimplifiedBackendClient()
         
         # 后端API客户端
         self.backend_api = BackendAPIClient(
@@ -95,10 +99,12 @@ class SitemapKeywordAnalyzer:
             self.config.storage.data_retention_days
         )
 
-        # 数据处理器
+        # 数据处理器 - 传入None作为seo_api参数
         self.data_processor = DataProcessor(
-            self.seo_api, self.backend_api, self.storage
+            None, self.backend_api, self.storage
         )
+        # 设置简化的后端客户端
+        self.data_processor.simplified_backend = self.simplified_backend
 
         # URL处理器
         self.url_processor = URLProcessor(
@@ -138,21 +144,30 @@ class SitemapKeywordAnalyzer:
                     self.logger.warning("没有从sitemap中解析到任何URL")
                     return self._create_result_summary(0, 0, 0, 0)
 
-                # 3. 过滤已处理的URL
+                # 3. 应用排除规则过滤
                 try:
-                    new_urls = self.url_processor.filter_processed_urls(all_urls, self.storage)
+                    # 先过滤被排除的URL
+                    filtered_urls = self.url_processor.filter_excluded_urls(all_urls)
+                    self.logger.info(f"排除规则过滤后剩余 {len(filtered_urls)} 个URL")
+                except Exception as e:
+                    self.logger.error(f"应用排除规则失败: {e}")
+                    filtered_urls = list(all_urls)
+                
+                # 4. 过滤已处理的URL
+                try:
+                    new_urls = self.url_processor.filter_processed_urls(set(filtered_urls), self.storage)
                     self.logger.info(f"发现 {len(new_urls)} 个新URL待处理")
                 except Exception as e:
                     self.logger.error(f"过滤URL失败: {e}")
-                    # 如果过滤失败，使用所有URL
-                    new_urls = list(all_urls)
-                    self.logger.info(f"使用所有URL进行处理: {len(new_urls)} 个")
+                    # 如果过滤失败，使用过滤后的URL
+                    new_urls = filtered_urls
+                    self.logger.info(f"使用过滤后的URL进行处理: {len(new_urls)} 个")
 
                 if not new_urls:
                     self.logger.info("没有新URL需要处理")
                     return self._create_result_summary(len(all_urls), 0, 0, 0)
 
-                # 4. 提取关键词
+                # 5. 提取关键词
                 try:
                     url_keywords_map = self.url_processor.extract_all_keywords(new_urls)
 
@@ -173,17 +188,24 @@ class SitemapKeywordAnalyzer:
                     self.logger.error(f"详细错误: {traceback.format_exc()}")
                     return self._create_result_summary(len(all_urls), len(new_urls), 0, 0)
 
-                # 5. 处理关键词数据
+                # 6. 直接提交URL-关键词映射（跳过SEO查询）
                 try:
-                    data_result = await self.data_processor.process_keywords_data(url_keywords_map)
-
-                    # 验证处理结果
-                    if not isinstance(data_result, dict):
-                        self.logger.error(f"数据处理返回类型错误: {type(data_result)}")
-                        data_result = {'saved_urls': 0, 'submitted_records': 0}
+                    # 新流程：直接提交映射关系
+                    success = await self.simplified_backend.submit_url_keywords_mapping(url_keywords_map)
+                    
+                    # 获取统计信息
+                    stats = self.simplified_backend.get_statistics()
+                    
+                    data_result = {
+                        'saved_urls': len(url_keywords_map) if success else 0,
+                        'submitted_records': stats['total_submitted']
+                    }
+                    
+                    self.logger.info(f"提交结果: {'成功' if success else '失败'}")
+                    self.logger.info(f"统计信息: {stats}")
 
                 except Exception as e:
-                    self.logger.error(f"关键词数据处理失败: {e}")
+                    self.logger.error(f"URL-关键词映射提交失败: {e}")
                     import traceback
                     self.logger.error(f"详细错误: {traceback.format_exc()}")
                     data_result = {'saved_urls': 0, 'submitted_records': 0}
@@ -291,7 +313,7 @@ class SitemapKeywordAnalyzer:
             'urls_saved': saved_urls,
             'records_submitted': submitted_records,
             'processing_time': datetime.now().isoformat(),
-            **self.data_processor.get_statistics()
+            # **self.data_processor.get_statistics()  # 注释掉，因为不再使用SEO查询
         }
     
     async def health_check(self) -> Dict[str, bool]:
@@ -301,8 +323,23 @@ class SitemapKeywordAnalyzer:
         Returns:
             Dict[str, bool]: 各组件健康状态
         """
-        # 获取数据处理器的健康状态
-        health_status = await self.data_processor.health_check()
+        # 健康状态检查
+        health_status = {}
+        
+        # 检查简化后端客户端
+        try:
+            health_status['simplified_backend'] = await self.simplified_backend.test_connection()
+        except Exception:
+            health_status['simplified_backend'] = False
+        
+        # 检查后端API（如果还在使用）
+        try:
+            health_status['backend_api'] = await self.backend_api.test_connection()
+        except Exception:
+            health_status['backend_api'] = False
+        
+        # 检查存储
+        health_status['storage'] = self.storage.storage_file.parent.exists()
 
         # 检查配置
         health_status['config'] = self.config_loader.validate_config_files()
