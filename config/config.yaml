@@ -1,16 +1,16 @@
 # 网站地图关键词分析工具 - 系统配置
 
-# SEO API配置 (已移除，不再使用)
-# seo_api:
-#   urls: "${SEO_API_URLS}"  # 从环境变量读取，多个URL用逗号分隔，系统自动轮询
-#   interval: 2.0  # 请求间隔（秒）
-#   batch_size: 5  # 每批查询关键词数量
-#   timeout: 60    # 请求超时时间
+# SEO API配置 (已废弃但保留以满足验证要求)
+seo_api:
+  urls: []  # 空列表，SEO功能已移除
+  interval: 2.0  # 请求间隔（秒）
+  batch_size: 5  # 每批查询关键词数量
+  timeout: 60    # 请求超时时间
 
-# 后端API配置
+# 后端API配置 (使用新的简化架构)
 backend_api:
-  url: "${BACKEND_API_URL}"
-  auth_token: "${BACKEND_API_TOKEN}"
+  url: "${SITEMAP_API_URL}"  # 新的简化后端API地址
+  auth_token: "${SITEMAP_SECRET_KEY}"  # 新的API密钥
   batch_size: 500  # 批量提交大小
   timeout: 40
 

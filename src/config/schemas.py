@@ -96,8 +96,9 @@ class SEOAPIConfig(BaseModel):
 
     @validator('urls')
     def validate_urls(cls, v):
+        # 允许空列表，因为SEO功能已废弃
         if not v:
-            raise ValueError('至少需要一个API端点')
+            return v  # 返回空列表，不抛出错误
         for url in v:
             if not url.startswith(('http://', 'https://')):
                 raise ValueError(f'无效的API URL: {url}')
