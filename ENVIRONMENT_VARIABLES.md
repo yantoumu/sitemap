@@ -47,7 +47,7 @@ DEBUG_MODE=false
 ### ❌ SEO API配置 (已移除)
 ```bash
 # SEO查询功能已完全移除，不再需要
-SEO_API_URLS=https://k3.seokey.vip,https://ads.seokey.vip
+# SEO_API_URLS=https://k3.seokey.vip,https://ads.seokey.vip  # 已移除，不再需要
 ```
 
 ### ❌ 原后端API配置 (已替换)

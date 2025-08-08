@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Security](https://img.shields.io/badge/Security-Hardened-red.svg)](SECURITY_SETUP.md)
 
-一个功能强大的网站地图解析和关键词提取工具，支持多种sitemap格式，集成SEO API，具备完整的安全防护机制。
+一个功能强大的网站地图解析和关键词提取工具，支持多种sitemap格式，具备简化后端API集成和完整的安全防护机制。
 
 ## ✨ 核心特性
 
@@ -21,8 +21,8 @@
 - 智能关键词清理和标准化
 
 ### 🔗 **API集成**
-- SEO API批量查询支持
-- 后端API数据提交
+- 简化后端API数据提交
+- 关键词批量提交支持
 - 自动重试和错误处理
 - 请求间隔和并发控制
 
@@ -59,11 +59,20 @@ nano .env
 
 **必需的环境变量**：
 ```bash
-SEO_API_URLS=your-seo-api-urls
-BACKEND_API_URL=your-backend-api-url
-BACKEND_API_TOKEN=your-backend-api-token
-SITEMAP_URLS=your-sitemap-urls
-ENCRYPTION_KEY=your-66-character-encryption-key
+# 简化后端API (新架构)
+SITEMAP_API_URL=http://localhost:5001/api/sitemap/keywords
+SITEMAP_SECRET_KEY=your-secret-key-2024
+
+# Sitemap监控URL列表
+SITEMAP_URLS=https://site1.com/sitemap.xml,https://site2.com/sitemap.xml
+
+# 数据加密密钥 (66字符吉利密钥)
+ENCRYPTION_KEY=your-66-character-lucky-encryption-key
+
+# 已废弃变量 (不再需要):
+# - SEO_API_URLS (SEO查询功能已移除)
+# - BACKEND_API_URL (已替换为SITEMAP_API_URL)
+# - BACKEND_API_TOKEN (已替换为SITEMAP_SECRET_KEY)
 ```
 
 ### 4. 运行健康检查
@@ -111,11 +120,13 @@ sitemap-keyword-analyzer/
 
 | 变量名 | 描述 | 示例 |
 |--------|------|------|
-| `SEO_API_URLS` | SEO API地址列表 | `https://api1.example.com,https://api2.example.com` |
-| `BACKEND_API_URL` | 后端API地址 | `https://api.example.com` |
-| `BACKEND_API_TOKEN` | 后端API认证令牌 | `your-api-token` |
+| `SITEMAP_API_URL` | 简化后端API地址 | `http://localhost:5001/api/sitemap/keywords` |
+| `SITEMAP_SECRET_KEY` | API认证密钥 | `your-secret-key-2024` |
 | `SITEMAP_URLS` | 监控的sitemap URL列表 | `https://site1.com/sitemap.xml,https://site2.com/sitemap.xml` |
-| `ENCRYPTION_KEY` | 66字符吉利加密密钥 | `your-66-character-encryption-key` |
+| `ENCRYPTION_KEY` | 66字符吉利加密密钥 | `your-66-character-lucky-encryption-key` |
+| ~~`SEO_API_URLS`~~ | ~~SEO API地址列表~~ | ~~已移除，不再需要~~ |
+| ~~`BACKEND_API_URL`~~ | ~~原后端API地址~~ | ~~已替换为SITEMAP_API_URL~~ |
+| ~~`BACKEND_API_TOKEN`~~ | ~~原API令牌~~ | ~~已替换为SITEMAP_SECRET_KEY~~ |
 
 ### 规则引擎配置
 

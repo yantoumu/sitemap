@@ -46,7 +46,7 @@ jobs:
       contents: write  # 允许推送代码到仓库
 
     env:
-      SEO_API_URLS: ${{ secrets.SEO_API_URLS }}
+      # SEO_API_URLS: ${{ secrets.SEO_API_URLS }}  # 已移除，不再需要
       BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
       BACKEND_API_TOKEN: ${{ secrets.BACKEND_API_TOKEN }}
       SITEMAP_URLS: ${{ secrets.SITEMAP_URLS }}
@@ -103,7 +103,8 @@ jobs:
         echo "🔍 验证必需的环境变量..."
 
         # 验证必需的环境变量
-        for var_name in SEO_API_URLS BACKEND_API_URL BACKEND_API_TOKEN SITEMAP_URLS ENCRYPTION_KEY; do
+        # SEO_API_URLS 已移除。BACKEND_API_URL/BACKEND_API_TOKEN 已被 SITEMAP_API_URL/SITEMAP_SECRET_KEY 替代
+        for var_name in SITEMAP_URLS ENCRYPTION_KEY; do
           var_value=$(eval echo \$$var_name)
           if [ -z "$var_value" ]; then
             echo "❌ 错误: $var_name 环境变量未设置"

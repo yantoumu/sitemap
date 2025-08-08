@@ -365,17 +365,9 @@ def create_default_config(test_mode: bool = False) -> KeywordAPIConfig:
     Returns:
         KeywordAPIConfig: 默认配置
     """
-    # 从环境变量读取SEO API地址列表
-    import os
-    api_urls = os.getenv('SEO_API_URLS', '').split(',')
-    api_urls = [url.strip() for url in api_urls if url.strip()]
-
-    # 如果没有配置API URL，使用空列表
-    if not api_urls:
-        api_urls = []
-
+    # SEO查询功能已移除，使用空的API端点列表
     return KeywordAPIConfig(
-        api_endpoints=api_urls,
+        api_endpoints=[],
         batch_size=5,
         interval_seconds=60,
         timeout_seconds=30,

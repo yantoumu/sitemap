@@ -1,11 +1,11 @@
 # 网站地图关键词分析工具 - 系统配置
 
-# SEO API配置
-seo_api:
-  urls: "${SEO_API_URLS}"  # 从环境变量读取，多个URL用逗号分隔，系统自动轮询
-  interval: 2.0  # 请求间隔（秒）
-  batch_size: 5  # 每批查询关键词数量
-  timeout: 60    # 请求超时时间
+# SEO API配置 (已移除，不再使用)
+# seo_api:
+#   urls: "${SEO_API_URLS}"  # 从环境变量读取，多个URL用逗号分隔，系统自动轮询
+#   interval: 2.0  # 请求间隔（秒）
+#   batch_size: 5  # 每批查询关键词数量
+#   timeout: 60    # 请求超时时间
 
 # 后端API配置
 backend_api:

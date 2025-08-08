@@ -273,8 +273,8 @@ def create_env_file_template(file_path: str = '.env') -> None:
 # 数据加密密钥 (推荐66字符吉利密钥)
 ENCRYPTION_KEY={LuckyCrypto.generate_lucky_key()}
 
-# SEO API配置 - 统一管理所有API地址
-SEO_API_URLS=https://api1.example.com,https://api2.example.com,https://k3.example.com,https://ads.example.com
+# SEO API配置 - 已移除，不再使用
+# SEO_API_URLS=https://api1.example.com,https://api2.example.com,https://k3.example.com,https://ads.example.com
 
 # 后端API配置 - 统一的后端服务
 BACKEND_API_URL=https://work.example.com
