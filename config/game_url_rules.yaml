@@ -452,42 +452,27 @@ rules:
       - "net"
       - "www"
 
-  # canva.com - 设计平台（只提取英文版关键词）
+  # canva.com - 设计平台（宽松规则，提取所有英文内容）
   - domain: "canva.com"
-    description: "Canva设计平台规则，只提取英文版本页面关键词"
+    description: "Canva设计平台规则，宽松模式提取更多英文页面关键词"
     patterns:
-      - "^/[a-zA-Z0-9][a-zA-Z0-9-]*/$"  # 匹配英文版本：/digital-asset-management-tools/
-      - "^/[a-zA-Z0-9][a-zA-Z0-9-]*$"   # 匹配英文版本：/digital-asset-management-tools
+      - "^/.*"  # 匹配所有路径，通过排除规则过滤
     extract_rules:
       - type: "path_segment"
         position: 0  # 取第一个路径段作为关键词
         split_chars: "-_"  # 用连字符分割成单词
         clean_regex: "[^a-zA-Z0-9 ]"  # 只保留字母数字和空格
     exclude_patterns:
-      # 排除多语言版本（路径以语言代码开头）
+      # 只排除多语言版本和系统页面
       - "^/[a-z]{2}(/.*)?$"      # 排除 /es/, /fr/, /de/ 等语言版本
+      - "^/[a-z]{2}_[a-z]{2}(/.*)?$"  # 排除 /zh_cn/, /en_us/ 等区域版本
       - "^/[a-z]{2}-[a-z]{2}(/.*)?$"  # 排除 /zh-cn/, /en-us/ 等区域版本
-      # 排除系统页面
+      # 基本系统页面
       - ".*/sitemap.*"
       - ".*/robots.*"
       - ".*/api/.*"
       - ".*/cdn-cgi/.*"
-      - ".*/help/.*"
-      - ".*/about.*"
-      - ".*/careers.*"
-      - ".*/privacy.*"
-      - ".*/terms.*"
-      - ".*/contact.*"
-      # 排除登录注册相关
-      - ".*/login.*"
-      - ".*/signup.*"
-      - ".*/register.*"
-      - ".*/auth.*"
-      # 排除用户相关页面
-      - ".*/profile/.*"
-      - ".*/user/.*"
-      - ".*/account/.*"
-      - ".*/settings/.*"
+      # 减少排除，保留更多内容
     stop_words:
       - "www"
       - "com" 

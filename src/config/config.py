@@ -28,17 +28,23 @@ class ConfigLoader:
         self.rules_path = Path(rules_path)
         self.logger = logging.getLogger(__name__)
         
-        # 加载环境变量 - 使用项目根目录的绝对路径
-        project_root = Path(__file__).parent.parent.parent
-        env_file = project_root / '.env'
-        
-        if env_file.exists():
-            result = load_dotenv(dotenv_path=env_file)
-            self.logger.debug(f"加载环境变量文件: {env_file} (结果: {result})")
+        # 加载环境变量 - GitHub Actions环境优先
+        is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+
+        if is_github_actions:
+            self.logger.debug("检测到GitHub Actions环境，跳过.env文件加载")
         else:
-            # 尝试当前工作目录
-            result = load_dotenv()
-            self.logger.debug(f"加载当前目录环境变量文件 (结果: {result})")
+            # 本地环境：加载.env文件
+            project_root = Path(__file__).parent.parent.parent
+            env_file = project_root / '.env'
+
+            if env_file.exists():
+                result = load_dotenv(dotenv_path=env_file)
+                self.logger.debug(f"加载环境变量文件: {env_file} (结果: {result})")
+            else:
+                # 尝试当前工作目录
+                result = load_dotenv()
+                self.logger.debug(f"加载当前目录环境变量文件 (结果: {result})")
         
     def load_system_config(self) -> AppConfig:
         """
@@ -119,10 +125,10 @@ class ConfigLoader:
     def _substitute_env_vars(self, data: Any) -> Any:
         """
         递归替换配置中的环境变量
-        
+
         Args:
             data: 配置数据
-            
+
         Returns:
             Any: 替换环境变量后的数据
         """
@@ -136,8 +142,22 @@ class ConfigLoader:
             env_value = os.getenv(env_var)
 
             if env_value is None:
-                self.logger.warning(f"环境变量未设置: {env_var}")
-                return data  # 保持原值
+                # 智能回退：尝试向后兼容变量
+                fallback_var = self._get_fallback_env_var(env_var)
+                if fallback_var:
+                    env_value = os.getenv(fallback_var)
+                    if env_value:
+                        self.logger.info(f"使用回退变量: {fallback_var} → {env_var}")
+
+                # 处理缺失的关键环境变量
+                if env_value is None and env_var in {'SITEMAP_API_URL', 'SITEMAP_SECRET_KEY', 'ENCRYPTION_KEY'}:
+                    is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+                    error_msg = f"关键环境变量未设置: {env_var}"
+                    error_msg += "。请检查GitHub Secrets配置。" if is_github_actions else "。请检查.env文件配置。"
+                    raise ValueError(error_msg)
+                elif env_value is None:
+                    self.logger.warning(f"可选环境变量未设置: {env_var}")
+                    return data
 
             # 清理环境变量值中的换行符和回车符（修复aiohttp安全检查问题）
             cleaned_value = self._sanitize_env_value(env_value)
@@ -171,6 +191,35 @@ class ConfigLoader:
             self.logger.debug("环境变量值包含控制字符，已自动清理")
 
         return cleaned
+
+    def _get_fallback_env_var(self, env_var: str) -> str:
+        """
+        获取向后兼容的环境变量名称
+
+        Args:
+            env_var: 当前环境变量名
+
+        Returns:
+            str: 向后兼容的环境变量名，如果没有则返回None
+        """
+        fallback_mapping = {
+            'SITEMAP_API_URL': 'BACKEND_API_URL',
+            'SITEMAP_SECRET_KEY': 'BACKEND_API_TOKEN'
+        }
+        fallback_var = fallback_mapping.get(env_var)
+
+        # 智能选择：如果新变量指向localhost，优先使用旧变量
+        if env_var == 'SITEMAP_API_URL':
+            sitemap_url = os.getenv('SITEMAP_API_URL')
+            backend_url = os.getenv('BACKEND_API_URL')
+
+            # 如果SITEMAP_API_URL指向localhost，但BACKEND_API_URL指向真实服务器
+            if (sitemap_url and 'localhost' in sitemap_url and
+                backend_url and 'localhost' not in backend_url):
+                self.logger.info(f"检测到 {env_var} 指向localhost，自动使用 BACKEND_API_URL")
+                return 'BACKEND_API_URL'
+
+        return fallback_var
 
     def validate_config_files(self) -> bool:
         """
