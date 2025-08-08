@@ -28,8 +28,17 @@ class ConfigLoader:
         self.rules_path = Path(rules_path)
         self.logger = logging.getLogger(__name__)
         
-        # 加载环境变量
-        load_dotenv()
+        # 加载环境变量 - 使用项目根目录的绝对路径
+        project_root = Path(__file__).parent.parent.parent
+        env_file = project_root / '.env'
+        
+        if env_file.exists():
+            result = load_dotenv(dotenv_path=env_file)
+            self.logger.debug(f"加载环境变量文件: {env_file} (结果: {result})")
+        else:
+            # 尝试当前工作目录
+            result = load_dotenv()
+            self.logger.debug(f"加载当前目录环境变量文件 (结果: {result})")
         
     def load_system_config(self) -> AppConfig:
         """
